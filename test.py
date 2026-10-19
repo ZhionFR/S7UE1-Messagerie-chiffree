@@ -1,11 +1,14 @@
 ## Imports
 import os
 import sys
+import hashlib
+import hmac as std_hmac
 import traceback
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from crypto_utils import aes_cbc_encrypt, aes_cbc_decrypt
 
+from crypto_utils import *
 
 ## Helpers
 
