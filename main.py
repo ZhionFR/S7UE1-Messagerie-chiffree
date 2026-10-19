@@ -1,4 +1,17 @@
 ## Imports
+from crypto_utils import *
+
+## Tests
+
+## Crypto_utils.py
+
+def test_crypto_utils():
+    key = os.urandom(32)
+    iv, ct = aes_cbc_encrypt("Bonjour", key)
+    print(len(iv), len(ct))  # 16 16
+
+
+test_crypto_utils()
 
 
 ## Bob genere sa paire de cles RSA
