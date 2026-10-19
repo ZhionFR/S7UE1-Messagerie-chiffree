@@ -4,20 +4,21 @@ import sys
 import hashlib
 import hmac as std_hmac
 import traceback
-from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives import padding as sym_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from crypto_utils import aes_cbc_encrypt, aes_cbc_decrypt
 
 from crypto_utils import *
+from rsa_utils import *
 
 ## Helpers
 
-def expect_error(func, code):
+def expect_error(func, code, module="crypto_utils"): # todo : pas propre, repasser le module des tests crypto_utils avec nouvelle variable
     """Vérifie que func() lève une ValueError portant le code attendu."""
     try:
         func()
     except ValueError as e:
-        assert str(e) == f"crypto_utils : {code}", f"attendu {code}, obtenu {e}"
+        assert str(e) == f"{module} : {code}", f"attendu {code}, obtenu {e}"
         return
     raise AssertionError(f"{code} non levée")
 
@@ -70,7 +71,7 @@ def test_crypto_utils():
     expect_error(lambda: aes_cbc_decrypt(iv, bad_padding, key), "Err04")
 
     # Err04 : padding correct mais UTF-8 invalide
-    padder = padding.PKCS7(128).padder()
+    padder = sym_padding.PKCS7(128).padder()
     padded = padder.update(b"\xff\xfe") + padder.finalize()
     bad_utf8 = raw_encrypt(padded, key, iv)
     expect_error(lambda: aes_cbc_decrypt(iv, bad_utf8, key), "Err04")
@@ -130,7 +131,40 @@ def test_crypto_utils():
 ## Tests : rsa_utils.py
 
 def test_rsa_utils():
-    raise NotImplementedError("à écrire")
+    err = lambda f, c: expect_error(f, c, module="rsa_utils")
+
+    priv, pub = generer_paire_rsa()
+    cles = os.urandom(32) + os.urandom(32)  # aes_key || hmac_key
+
+    # Aller-retour
+    ct = rsa_chiffrer_cle(cles, pub)
+    assert len(ct) == 3072 // 8
+    assert rsa_dechiffrer_cle(ct, priv) == cles
+
+    # OAEP probabiliste : deux chiffrés différents pour le même clair
+    assert rsa_chiffrer_cle(cles, pub) != ct
+
+    # Tailles limites : 1 octet et max (318 octets en 3072 bits)
+    assert rsa_dechiffrer_cle(rsa_chiffrer_cle(b"\x01", pub), priv) == b"\x01"
+    max_clair = os.urandom(3072 // 8 - 66)
+    assert rsa_dechiffrer_cle(rsa_chiffrer_cle(max_clair, pub), priv) == max_clair
+
+    # Erreurs : chiffrement
+    err(lambda: rsa_chiffrer_cle(b"", pub), "Err01")
+    err(lambda: rsa_chiffrer_cle(os.urandom(3072 // 8 - 65), pub), "Err01")
+
+    # Erreurs : déchiffrement
+    err(lambda: rsa_dechiffrer_cle(ct[:-1], priv), "Err02")
+    err(lambda: rsa_dechiffrer_cle(ct + b"\x00", priv), "Err02")
+    err(lambda: rsa_dechiffrer_cle(b"", priv), "Err02")
+
+    # Chiffré altéré -> Err03
+    tampered = bytes([ct[0] ^ 0x01]) + ct[1:]
+    err(lambda: rsa_dechiffrer_cle(tampered, priv), "Err03")
+
+    # Mauvaise clé privée -> Err03
+    other_priv, _ = generer_paire_rsa()
+    err(lambda: rsa_dechiffrer_cle(ct, other_priv), "Err03")
 
 
 ## Tests : messenger.py
