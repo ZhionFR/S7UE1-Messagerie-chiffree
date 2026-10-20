@@ -23,3 +23,33 @@ def send_message(plaintext: str, rsa_public_key) -> dict[str, str]:
         "ciphertext": ciphertext.hex(),
         "hmac": mac.hex(),
     }
+
+
+## receive_message(packet, rsa_private_key) -> str
+def receive_message(packet: dict[str, str], rsa_private_key) -> str:
+    # Décode les 4 champs hex
+    try:
+        cles_chiffrees = bytes.fromhex(packet["cles_chiffrees"])
+        iv = bytes.fromhex(packet["iv"])
+        ciphertext = bytes.fromhex(packet["ciphertext"])
+        mac = bytes.fromhex(packet["hmac"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("messenger : Err01") from None
+    ## messenger : Err01 : Malformed packet (missing field or invalid hex).
+
+    # Déchiffre cles_chiffrees avec la clé privée RSA
+    cles = rsa_dechiffrer_cle(cles_chiffrees, rsa_private_key)
+    if len(cles) != 64:
+        raise ValueError("messenger : Err02")
+    ## messenger : Err02 : Unexpected decrypted keys size, expected 64 bytes (aes_key || hmac_key).
+
+    # sépare les clés AES (32 premiers octets) et HMAC (32 suivants)
+    aes_key, hmac_key = cles[:32], cles[32:]
+
+    # Vérification du MAC AVANT tout déchiffrement AES / retrait du padding
+    if not verify_hmac(hmac_key, iv + ciphertext, mac):
+        raise ValueError("messenger : Err03")
+    ## messenger : Err03 : MAC verification failed (tampered data).
+
+    # Déchiffre en AES-CBC, retire le padding, décode en UTF-8 (défaut)
+    return aes_cbc_decrypt(iv, ciphertext, aes_key)
