@@ -119,9 +119,25 @@ Déchiffre avec la clé privée. Une seule erreur (Err03) pour toute cause d’�
 **send_message(plaintext, rsa_public_key):**
 
 Chiffre plaintext pour le destinataire détenteur de la clé privée associée à rsa_public_key.
+
 Desc : 
 - Tire aes_key et hmac_key (32 octets chacune, os.urandom), nouvelles à chaque message.
 - Chiffre le message : iv, ciphertext = aes_cbc_encrypt(plaintext, aes_key).
 - Calcule hmac = HMAC-SHA256(hmac_key, iv || ciphertext).
 - Chiffre aes_key || hmac_key (64 octets) avec RSA-OAEP.
+
 Out: Dictionnaire de chaines en hex
+
+
+**receive_message(packet, rsa_private_key):**
+
+Vérifie et déchiffre un paquet produit par send_message.
+
+Desc:
+- Décode les 4 champs hex.
+- Déchiffre cles_chiffrees avec la clé privée RSA
+- Sépare AES (32 premiers octets) et HMAC (32 suivants).
+- Vérifie le MAC en temps constant, *avant* tout déchiffrement AES.
+- Déchiffre en AES-CBC, retire le padding, décode en UTF-8. -> voir [aes_cbc_decrypt()](#doc-crypto_utils)
+
+Out: le message en clair (sauf si il a été modifié)
