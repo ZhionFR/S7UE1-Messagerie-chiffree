@@ -78,3 +78,15 @@ titre("Même échange via send_message / receive_message")
 packet = send_message(MESSAGE, bob_public)
 assert receive_message(packet, bob_private) == MESSAGE
 print("Aller-retour OK.")
+
+
+## ---------- Partie 3 : Eve modifie le paquet ----------
+
+titre("Eve altère le chiffré")
+premier = packet["ciphertext"][0]
+altere = {**packet, "ciphertext": ("1" if premier == "0" else "0") + packet["ciphertext"][1:]}
+try:
+    receive_message(altere, bob_private)
+    print("ERREUR : paquet altéré accepté !")
+except ValueError as e:
+    print(f"Paquet rejeté par Bob avec l'erreur \"{e}\"")
