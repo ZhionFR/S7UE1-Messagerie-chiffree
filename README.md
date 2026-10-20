@@ -80,17 +80,6 @@ Calcule un HMAC-SHA256 (32 octets).
 Vérifie un MAC en temps constant. Retourne True ou False.
 -> temps constant natif dans la librairie `cryptography` donc pas besoin de l'implémenter en plus
 
-### TEMP : TO DELETE
-**encrypt_then_mac(plaintext, aes_key, hmac_key):**
-
-Chiffre puis calcule le MAC sur iv || ciphertext. Retourne iv || ciphertext || mac.
--> sera remplacé par des fonctions de messenger.py (mais sert aussi de prototype)
-
-**verify_then_decrypt(blob, aes_key, hmac_key):**
-
-Contrôle la taille, vérifie le MAC avant tout déchiffrement, puis déchiffre.
--> sera remplacé par des fonctions de messenger.py (mais sert aussi de prototype)
-
 
 ## Doc: rsa_utils
 

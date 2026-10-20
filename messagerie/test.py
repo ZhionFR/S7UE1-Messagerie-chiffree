@@ -96,38 +96,6 @@ def test_crypto_utils():
     expect_error(lambda: compute_hmac(os.urandom(16), data), "Err05")
     expect_error(lambda: verify_hmac(os.urandom(16), data, mac), "Err05")
 
-    ## --- Encrypt-then-MAC : aller-retour ---
-    for msg in ["Bonjour", "", "A" * 16, "Bonjour é€ 🔐", "x" * 10_000]:
-        blob = encrypt_then_mac(msg, aes_key, hmac_key)
-        assert len(blob) % 16 == 0 and len(blob) >= 64
-        assert verify_then_decrypt(blob, aes_key, hmac_key) == msg
-
-    blob = encrypt_then_mac("Bonjour", aes_key, hmac_key)
-    assert len(blob) == 16 + 16 + 32                                     # iv + chiffré + mac
-
-    ## --- Encrypt-then-MAC : erreurs ---
-    # Altération de n'importe quel octet (iv, chiffré ou mac) -> Err08
-    for i in range(len(blob)):
-        tampered = blob[:i] + bytes([blob[i] ^ 0x01]) + blob[i + 1:]
-        expect_error(lambda: verify_then_decrypt(tampered, aes_key, hmac_key), "Err08")
-
-    # Mauvaise clé HMAC -> Err08
-    expect_error(lambda: verify_then_decrypt(blob, aes_key, os.urandom(32)), "Err08")
-
-    # Tailles de blob invalides -> Err07
-    expect_error(lambda: verify_then_decrypt(b"", aes_key, hmac_key), "Err07")
-    expect_error(lambda: verify_then_decrypt(blob[:48], aes_key, hmac_key), "Err07")
-    expect_error(lambda: verify_then_decrypt(blob[:-1], aes_key, hmac_key), "Err07")
-    expect_error(lambda: verify_then_decrypt(blob + b"\x00", aes_key, hmac_key), "Err07")
-
-    # Clés identiques -> Err06
-    expect_error(lambda: encrypt_then_mac("test", aes_key, aes_key), "Err06")
-    expect_error(lambda: verify_then_decrypt(blob, aes_key, aes_key), "Err06")
-
-    # Tailles de clé -> Err05 (HMAC) / Err01 (AES)
-    expect_error(lambda: encrypt_then_mac("test", aes_key, os.urandom(16)), "Err05")
-    expect_error(lambda: encrypt_then_mac("test", os.urandom(16), hmac_key), "Err01")
-
 ## Tests : rsa_utils.py
 
 def test_rsa_utils():
