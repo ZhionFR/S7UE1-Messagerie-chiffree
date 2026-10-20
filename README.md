@@ -113,7 +113,9 @@ Chiffre un str en AES-256-CBC (IV aléatoire de 16 octets, padding PKCS7). Retou
 
 Déchiffre, retire le padding et décode en UTF-8. Une seule erreur (Err04) pour padding ou UTF-8 invalide.
 
-> Même erreur volontairement car 255/256 cas seront une erreur de padding.
+> Même erreur volontairement pour éviter l'attaque de Vaudenay.
+> Aussi 255/256 cas seront une erreur de padding.
+
 
 #### compute_hmac
 
