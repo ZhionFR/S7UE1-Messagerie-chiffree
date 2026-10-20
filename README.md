@@ -21,6 +21,10 @@ Ce repo contient du projet de cryptographie d'octobre 2026.
   - [Doc: messenger](#doc-messenger)
     - [send_message](#send_message)
     - [receive_message](#receive_message)
+- [Tests & erreurs](#tests--erreurs)
+    - [Tests](#tests)
+    - [Codes d'erreurs](#codes-derreur)
+
 
 # Cahier des charges
 
@@ -186,3 +190,28 @@ Description :
 - Déchiffre en AES-CBC, retire le padding, décode en UTF-8 (voir [aes_cbc_decrypt](#aes_cbc_decrypt)).
 
 Sortie : le message en clair (sauf s'il a été modifié).
+
+
+
+# Tests & Erreurs
+
+## Tests
+
+test.py est autoporteur : lancer `python test.py` teste et renvoie les résultats pour chaque fonction des autres modules (PASS ou FAIL, ERROR si erreur inattendue)
+
+
+## Codes d'erreur
+
+| Module | Code | Signification |
+|---|---|---|
+| crypto_utils | Err01 | Taille de clé AES ≠ 32 octets |
+| crypto_utils | Err02 | Taille d'IV ≠ 16 octets |
+| crypto_utils | Err03 | Chiffré vide ou non multiple de 16 |
+| crypto_utils | Err04 | Déchiffrement échoué (padding ou UTF-8) |
+| crypto_utils | Err05 | Taille de clé HMAC ≠ 32 octets |
+| rsa_utils | Err01 | Clés à chiffrer : taille hors de 1 à 318 octets |
+| rsa_utils | Err02 | Chiffré RSA de taille ≠ k octets |
+| rsa_utils | Err03 | Déchiffrement RSA échoué |
+| messenger | Err01 | Paquet mal formé |
+| messenger | Err02 | Clés déchiffrées ≠ 64 octets |
+| messenger | Err03 | MAC invalide |
