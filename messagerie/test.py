@@ -6,7 +6,6 @@ import hmac as std_hmac
 import traceback
 from cryptography.hazmat.primitives import padding as sym_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from crypto_utils import aes_cbc_encrypt, aes_cbc_decrypt
 
 ### Pas * pour redondance
 from crypto_utils import aes_cbc_encrypt, aes_cbc_decrypt, compute_hmac, verify_hmac

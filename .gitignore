@@ -1,2 +1,4 @@
 ## Ignore VSCODE local cache
 messagerie/__pycache__/
+__pycache__/
+*.pyc
