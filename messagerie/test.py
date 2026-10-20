@@ -8,12 +8,14 @@ from cryptography.hazmat.primitives import padding as sym_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from crypto_utils import aes_cbc_encrypt, aes_cbc_decrypt
 
-from crypto_utils import *
-from rsa_utils import *
+### Pas * pour redondance
+from crypto_utils import aes_cbc_encrypt, aes_cbc_decrypt, compute_hmac, verify_hmac
+from rsa_utils import generer_paire_rsa, rsa_chiffrer_cle, rsa_dechiffrer_cle
+from messenger import send_message, receive_message
 
 ## Helpers
 
-def expect_error(func, code, module="crypto_utils"): # todo : pas propre, repasser le module des tests crypto_utils avec nouvelle variable
+def expect_error(func, code, module="crypto_utils"):
     """Vérifie que func() lève une ValueError portant le code attendu."""
     try:
         func()
@@ -33,7 +35,6 @@ def raw_encrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
 
 def test_crypto_utils():
     key = os.urandom(32)
-    aes_key = os.urandom(32)
     hmac_key = os.urandom(32)
 
     ## --- aes_cbc_encrypt : tailles ---
@@ -138,7 +139,51 @@ def test_rsa_utils():
 ## Tests : messenger.py
 
 def test_messenger():
-    raise NotImplementedError("à écrire")
+    err = lambda f, c, m="messenger": expect_error(f, c, module=m)
+
+    priv, pub = generer_paire_rsa()
+
+    # Aller-retour
+    for msg in ["Bonjour", "", "A" * 16, "Bonjour é€ 🔐", "x" * 10_000]:
+        packet = send_message(msg, pub)
+        assert set(packet) == {"cles_chiffrees", "iv", "ciphertext", "hmac"}
+        assert receive_message(packet, priv) == msg
+
+    # Tailles (en hex : 2 caractères par octet)
+    packet = send_message("Bonjour", pub)
+    assert len(packet["cles_chiffrees"]) == 2 * (3072 // 8)
+    assert len(packet["iv"]) == 32
+    assert len(packet["hmac"]) == 64
+
+    # Deux envois du même message -> paquets différents
+    assert send_message("Bonjour", pub) != packet
+
+    # Altération de iv, ciphertext ou hmac -> Err03
+    def flip(s):
+        return ("1" if s[0] == "0" else "0") + s[1:]
+
+    for field in ("iv", "ciphertext", "hmac"):
+        bad = {**packet, field: flip(packet[field])}
+        err(lambda: receive_message(bad, priv), "Err03")
+
+    # Altération de cles_chiffrees -> erreur RSA
+    bad = {**packet, "cles_chiffrees": flip(packet["cles_chiffrees"])}
+    err(lambda: receive_message(bad, priv), "Err03", "rsa_utils")
+
+    # Mauvaise clé privée -> erreur RSA
+    other_priv, _ = generer_paire_rsa()
+    err(lambda: receive_message(packet, other_priv), "Err03", "rsa_utils")
+
+    # Paquet mal formé -> Err01
+    err(lambda: receive_message({}, priv), "Err01")
+    err(lambda: receive_message({k: v for k, v in packet.items() if k != "iv"}, priv), "Err01")
+    err(lambda: receive_message({**packet, "iv": "zz"}, priv), "Err01")
+    err(lambda: receive_message({**packet, "hmac": "abc"}, priv), "Err01")  # longueur impaire
+    err(lambda: receive_message({**packet, "iv": None}, priv), "Err01")
+
+    # Err02 : clés déchiffrées de taille ≠ 64 octets
+    forged = {**packet, "cles_chiffrees": rsa_chiffrer_cle(os.urandom(48), pub).hex()}
+    err(lambda: receive_message(forged, priv), "Err02")
 
 
 ## Registre : nom du groupe -> fonction
