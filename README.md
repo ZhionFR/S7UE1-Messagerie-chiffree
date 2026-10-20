@@ -2,6 +2,17 @@
 
 Ce repo contient du projet de cryptographie d'octobre 2026.
 
+- [Cahier des charges](#cahier-des-charges)
+  - [Description](#description)
+  - [Processus](#processus)
+  - [Specs](#specs)
+  - [Architecture](#architecture)
+  - [Fichiers](#fichiers)
+- [Documentation du projet](#documentation-du-projet)
+  - [Doc: crypto_utils](#doc-crypto_utils)
+  - [Doc: rsa_utils](#doc-rsa_utils)
+  - [Doc: messenger](#doc-messenger)
+
 # Cahier des charges
 
 ## Description
