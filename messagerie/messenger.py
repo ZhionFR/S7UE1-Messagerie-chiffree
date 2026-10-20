@@ -2,6 +2,7 @@
 import os
 from crypto_utils import aes_cbc_encrypt, aes_cbc_decrypt, compute_hmac, verify_hmac
 from rsa_utils import rsa_chiffrer_cle, rsa_dechiffrer_cle
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 
 
 ## Constantes
@@ -9,7 +10,7 @@ FIELDS = ("cles_chiffrees", "iv", "ciphertext", "hmac")
 
 
 ## send_message(plaintext, rsa_public_key) -> {cles_chiffrees, iv, ciphertext, hmac} en hex
-def send_message(plaintext: str, rsa_public_key) -> dict[str, str]:
+def send_message(plaintext: str, rsa_public_key: RSAPublicKey) -> dict[str, str]:
     aes_key = os.urandom(32)
     hmac_key = os.urandom(32)
 
@@ -26,7 +27,7 @@ def send_message(plaintext: str, rsa_public_key) -> dict[str, str]:
 
 
 ## receive_message(packet, rsa_private_key) -> str
-def receive_message(packet: dict[str, str], rsa_private_key) -> str:
+def receive_message(packet: dict[str, str], rsa_private_key: RSAPrivateKey) -> str:
     # Décode les 4 champs hex
     try:
         cles_chiffrees = bytes.fromhex(packet["cles_chiffrees"])
