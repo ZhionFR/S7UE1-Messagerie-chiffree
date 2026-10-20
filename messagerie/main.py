@@ -12,6 +12,7 @@ MESSAGE = "Salut Bob, ce message est secret !! Alice."
 def titre(texte: str) -> None:
     print(f"\n=== {texte} ===")
 
+## ---------- Partie 1 : déroulé étape par étape (fonctions de bas niveau) ----------
 
 titre("Bob")
 ## Bob genere sa paire de cles RSA
@@ -69,3 +70,11 @@ print("HMAC valide.")
 resultat = aes_cbc_decrypt(r_iv, r_ciphertext, r_aes_key)
 print(f"Message déchiffré : {resultat}")
 assert resultat == MESSAGE
+
+
+## ---------- Partie 2 : même échange via messenger.py ----------
+
+titre("Même échange via send_message / receive_message")
+packet = send_message(MESSAGE, bob_public)
+assert receive_message(packet, bob_private) == MESSAGE
+print("Aller-retour OK.")
