@@ -33,28 +33,28 @@ Bob déchiffre le message
 #### Architecture
 
 messagerie/
-	crypto_utils.py
-	rsa_utils.py
-	messenger.py
-	main.py
-	README.md
+- crypto_utils.py
+- rsa_utils.py
+- messenger.py
+- main.py
+- README.md
 
 ##### Fichiers
 crypto_utils.py
-	aes_cbc_encrypt(plaintext, aes_key) -> (iv, ciphertext)
-	aes_cbc_decrypt(iv, ciphertext, aes_key) -> plaintext
-	compute_hmac(hmac_key, data) -> 32 octets
-	verify_hmac(hmac_key, data, mac) -> bool
+- aes_cbc_encrypt(plaintext, aes_key) -> (iv, ciphertext)
+- aes_cbc_decrypt(iv, ciphertext, aes_key) -> plaintext
+- compute_hmac(hmac_key, data) -> 32 octets
+- verify_hmac(hmac_key, data, mac) -> bool
 
 rsa_utils.py
-	generer_paire_rsa() -> (private_key, public_key)
-	rsa_chiffrer_cle(cles, rsa_public_key) -> bytes
-	rsa_dechiffrer_cle(cles_chiffrees, rsa_private_key) -> bytes
+- generer_paire_rsa() -> (private_key, public_key)
+- rsa_chiffrer_cle(cles, rsa_public_key) -> bytes
+- rsa_dechiffrer_cle(cles_chiffrees, rsa_private_key) -> bytes
 
 messenger.py
-	send_message(plaintext, rsa_public_key) -> {cles_chiffrees, iv, ciphertext, hmac} (en hex)
-	recieve_message(packet, rsa_private_key) -> plaintext
-		-> exception si le message est faux
+- send_message(plaintext, rsa_public_key) -> {cles_chiffrees, iv, ciphertext, hmac} (en hex)
+- recieve_message(packet, rsa_private_key) -> plaintext
+- -> exception si le message est faux
 
 main.py
-	Déroule toute la séquence décrite dans [[Processus]]
+- Déroule toute la séquence décrite dans [[Processus]]
