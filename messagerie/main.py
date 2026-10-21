@@ -2,7 +2,7 @@
 import os
 from crypto_utils import aes_cbc_encrypt, aes_cbc_decrypt, compute_hmac, verify_hmac
 from rsa_utils import generer_paire_rsa, rsa_chiffrer_cle, rsa_dechiffrer_cle
-from messenger import send_message, receive_message
+from messenger import send_message, receive_message, ReplayCache
 
 ## Constantes
 MESSAGE = "Salut Bob, ce message est secret !! Alice."
@@ -11,6 +11,7 @@ MESSAGE = "Salut Bob, ce message est secret !! Alice."
 ## Fonctions utilitaires
 def titre(texte: str) -> None:
     print(f"\n=== {texte} ===")
+
 
 ## ---------- Partie 1 : déroulé étape par étape (fonctions de bas niveau) ----------
 
@@ -90,3 +91,26 @@ try:
     print("ERREUR : paquet altéré accepté !")
 except ValueError as e:
     print(f"Paquet rejeté par Bob avec l'erreur \"{e}\"")
+
+
+
+## ---------- Partie 4 : Eve rejoue un paquet valide ----------
+
+titre("Eve rejoue un paquet intercepté")
+cache = ReplayCache()
+packet = send_message(MESSAGE, bob_public)
+assert receive_message(packet, bob_private, cache) == MESSAGE
+print("Premier envoi accepté par Bob.")
+try:
+    receive_message(packet, bob_private, cache)
+    print("ERREUR : rejeu accepté !")
+except ValueError as e:
+    print(f"Rejeu rejeté par Bob avec l'erreur \"{e}\"")
+
+## Eve tente de contourner le cache en changeant le nonce
+contournement = {**packet, "nonce": ("1" if packet["nonce"][0] == "0" else "0") + packet["nonce"][1:]}
+try:
+    receive_message(contournement, bob_private, cache)
+    print("ERREUR : nonce modifié accepté !")
+except ValueError as e:
+    print(f"Nonce modifié rejeté par Bob avec l'erreur \"{e}\"")
