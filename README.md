@@ -21,9 +21,16 @@ Ce repo contient le projet de cryptographie d'octobre 2026.
   - [Doc: messenger](#doc-messenger)
     - [send_message](#send_message)
     - [receive_message](#receive_message)
+    - [ReplayCache](#replaycache)
 - [Tests & erreurs](#tests--erreurs)
   - [Tests](#tests)
-  - [Codes d'erreurs](#codes-derreur)
+    - [Résultats des tests](#resultats-des-tests)
+    - [Groupes de tests](#groupes-de-tests)
+      - [crypto_utils](#crypto_utils)
+      - [rsa_utils](#rsa_utils)
+      - [messenger](#messenger)
+      - [anti_rejeu](#anti_rejeu)
+  - [Codes d'erreur](#codes-derreur)
 
 
 # Description
@@ -95,6 +102,45 @@ messagerie/
 **`main.py`**
 
 - Déroule toute la séquence décrite dans [Processus](#processus)
+
+Exemple d'output attendu : 
+
+```
+$python main.py
+
+=== Bob ===
+Bob a généré sa paire RSA 3072 bits et publie sa clé publique.
+
+=== Alice ===
+Clés AES et HMAC générées (32 octets chacune).
+Clés chiffrées en RSA-OAEP : 384 octets.
+Message chiffré : IV 16 octets, chiffré 48 octets.
+HMAC-SHA256 : b6e8b22332fa003caface11abd969bb91346da0aaddcf3c2cbbd9fb8192d69db
+
+=== Eve (ce qui circule sur le réseau) ===
+cles_chiffrees  40fcf11a5f8f8505b7a5994b95abf754c75c97e0bf8ffd7e...
+iv              91e3084c3c4dd1b0d602c42e1595b196
+ciphertext      ddd1090bb31a78376af78026430dbc7a70b1ed80db003fe6...
+hmac            b6e8b22332fa003caface11abd969bb91346da0aaddcf3c2...
+
+=== Bob ===
+HMAC valide.
+Message déchiffré : Salut Bob, ce message est secret !! Alice.
+
+=== Même échange via send_message / receive_message ===
+Aller-retour OK.
+
+=== Eve altère le chiffré ===
+Paquet rejeté par Bob avec l'erreur "messenger : Err03"
+
+=== Eve rejoue un paquet intercepté ===
+Premier envoi accepté par Bob.
+Rejeu rejeté par Bob avec l'erreur "messenger : Err05"
+Nonce modifié rejeté par Bob avec l'erreur "messenger : Err03"
+```
+
+
+
 
 # Documentation du projet
 
