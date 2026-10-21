@@ -217,7 +217,7 @@ Mémorise les nonces acceptés (`nonce -> timestamp`).
 ## Tests
 
 test.py est autoporteur : lancer `python test.py` teste et renvoie les résultats pour chaque groupe (`crypto_utils`, `rsa_utils`, `messenger`, `anti_rejeu`) des autres modules (PASS ou FAIL, ERROR si erreur inattendue)
-Il accepte aussi `python test.py <group_name>` et `--list` (liste les groupes), et peut afficher SKIP si des groupes ne sont pas testés.
+Il accepte aussi `python test.py <group_name>` et `--list` (liste les groupes).
 
 ### Resultats des tests
 
