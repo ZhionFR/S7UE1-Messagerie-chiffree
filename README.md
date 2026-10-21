@@ -188,7 +188,7 @@ Vérifie et déchiffre un paquet produit par `send_message`.
 
 Description :
 
-- Décodage des 6 champs hex, tailles de `timestamp` (8) et `nonce` (16) → Err01
+- Décodage des 6 champs hex, tailles de `timestamp` (8) et `nonce` (16) -> Err01
 - Déchiffre `cles_chiffrees` avec la clé privée RSA.
 - Sépare AES (32 premiers octets) et HMAC (32 suivants).
 - Vérifie le MAC en temps constant, *avant* tout déchiffrement AES.
@@ -239,6 +239,52 @@ Sortie attendue de `python test.py` :
 Le code de retour est `0` si tout passe, `1` s'il y a au moins un `FAIL` ou `ERROR`. Un nom de groupe inconnu arrête le script avec un message d'erreur (Test inconnu).
 
 > Les tests génèrent plusieurs paires RSA 3072 bits, l'exécution n'est donc pas instantanée mais ne doit pas prendre plus de quelques secondes.
+
+### Groupes de tests
+
+#### `crypto_utils`
+
+**AES-256-CBC**
+- Tailles : IV de 16 octets, padding PKCS7 (7 octets -> 16, 16 -> 32, 17 -> 32, message vide -> 16)
+- IV et chiffré différents à chaque appel pour un même message
+- Aller-retour : message vide, 16 et 17 caractères, Unicode, 10k caractères
+- Erreurs : mauvaise taille de clé (Err01), d'IV (Err02), chiffré vide ou non multiple de 16 (Err03), padding invalide ou UTF-8 invalide (Err04)
+
+**HMAC-SHA256**
+- Sortie de 32 octets, déterministe, identique à l'implémentation de la stdlib (`hmac` + `hashlib`)
+- `verify_hmac` rejette : données altérées, MAC altéré, mauvaise clé, MAC trop court, trop long ou vide
+- Mauvaise taille de clé (Err05)
+
+#### `rsa_utils`
+
+- Aller-retour, chiffré de 384 octets (RSA 3072 bits)
+- OAEP probabiliste : deux chiffrés différents pour un même clair
+- Tailles limites : 1 octet et 318 octets (maximum)
+- Chiffrement : clés vides ou de 319 octets (Err01)
+- Déchiffrement : chiffré trop court, trop long ou vide (Err02) ; chiffré altéré ou mauvaise clé privée (Err03)
+
+#### `messenger`
+
+- Aller-retour : message vide, 16 caractères, Unicode, 10 000 caractères
+- Paquet de 6 champs, tailles en hex (`cles_chiffrees` 768, `iv` 32, `hmac` 64, `timestamp` 16, `nonce` 32)
+- Deux envois du même message donnent des paquets différents
+- Altération de `iv`, `ciphertext`, `hmac`, `timestamp` ou `nonce` : rejet (Err03)
+- `cles_chiffrees` altéré ou mauvaise clé privée : erreur RSA (rsa_utils Err03)
+- Paquet mal formé (champ manquant, hex invalide, longueur impaire, `None`, `timestamp` ou `nonce` de mauvaise taille) : Err01
+- Clés déchiffrées de taille ≠ 64 octets : Err02
+
+#### `anti_rejeu`
+
+- Paquet valide accepté une première fois, puis rejoué à l'identique : rejeté (Err05)
+- Même texte renvoyé légitimement (nouveau nonce) : accepté
+- `nonce` modifié pour contourner le cache : rejeté (Err03), le MAC couvre le nonce
+- `timestamp` modifié pour rafraîchir un vieux paquet : rejeté (Err03), le MAC couvre la date
+- Paquet périmé (> 60 s) ou daté du futur : rejeté (Err04) et non mémorisé
+- Faux paquet (MAC invalide) portant le nonce d'un vrai : rejeté (Err03), le vrai reste acceptable car le nonce n'est mémorisé qu'après le MAC
+- `ReplayCache.purge()` après la fenêtre : nonces oubliés, mémoire bornée
+- Appel sans cache explicite : le cache par défaut rejette aussi le rejeu
+
+> Le paramètre `now` de `receive_message` permet de simuler un paquet périmé ou futur sans attendre 60 secondes.
 
 
 ## Codes d'erreur
