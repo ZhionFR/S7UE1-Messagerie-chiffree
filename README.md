@@ -145,8 +145,6 @@ Paquet périmé rejeté par Bob avec l'erreur "messenger : Err04"
 ```
 
 
-
-
 # Documentation du projet
 
 ## Doc: crypto_utils
