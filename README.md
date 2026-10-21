@@ -2,8 +2,7 @@
 
 Ce repo contient le projet de cryptographie d'octobre 2026.
 
-- [Cahier des charges](#cahier-des-charges)
-  - [Description](#description)
+- [Description](#description)
   - [Processus](#processus)
   - [Specs](#specs)
   - [Architecture](#architecture)
@@ -311,7 +310,7 @@ Le code de retour est `0` si tout passe, `1` s'il y a au moins un `FAIL` ou `ERR
 
 #### `messenger`
 
-- Aller-retour : message vide, 16 caractères, Unicode, 10 000 caractères
+- Aller-retour : message vide, 16 caractères, Unicode, 10k caractères
 - Paquet de 6 champs, tailles en hex (`cles_chiffrees` 768, `iv` 32, `hmac` 64, `timestamp` 16, `nonce` 32)
 - Deux envois du même message donnent des paquets différents
 - Altération de `iv`, `ciphertext`, `hmac`, `timestamp` ou `nonce` : rejet (Err03)
