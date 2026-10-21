@@ -114,16 +114,20 @@ Bob a généré sa paire RSA 3072 bits et publie sa clé publique.
 Clés AES et HMAC générées (32 octets chacune).
 Clés chiffrées en RSA-OAEP : 384 octets.
 Message chiffré : IV 16 octets, chiffré 48 octets.
-HMAC-SHA256 : b6e8b22332fa003caface11abd969bb91346da0aaddcf3c2cbbd9fb8192d69db
+Horodatage (8 octets) et nonce (16 octets) générés.
+HMAC-SHA256 : 8f12d6a1485d9f5d98c48aab1dd3dd29a1f0c2d84a116ee733db7b827ce22338
 
 === Eve (ce qui circule sur le réseau) ===
-cles_chiffrees  40fcf11a5f8f8505b7a5994b95abf754c75c97e0bf8ffd7e...
-iv              91e3084c3c4dd1b0d602c42e1595b196
-ciphertext      ddd1090bb31a78376af78026430dbc7a70b1ed80db003fe6...
-hmac            b6e8b22332fa003caface11abd969bb91346da0aaddcf3c2...
+cles_chiffrees  c64575a550b2989f20e2db0af61f048b4b493f505f9cc06c...
+iv              ffafbc1aa7c3c8cb2139a6a8991ace4c
+ciphertext      812103701907f2b8a30ad7d444d7c976868e175ae473ebe1...
+hmac            8f12d6a1485d9f5d98c48aab1dd3dd29a1f0c2d84a116ee7...
+timestamp       000000006ad8d6b2
+nonce           73667321ab4f679d4ac4ee95587e4308
 
 === Bob ===
 HMAC valide.
+Horodatage et nonce valides.
 Message déchiffré : Salut Bob, ce message est secret !! Alice.
 
 === Même échange via send_message / receive_message ===
@@ -136,6 +140,8 @@ Paquet rejeté par Bob avec l'erreur "messenger : Err03"
 Premier envoi accepté par Bob.
 Rejeu rejeté par Bob avec l'erreur "messenger : Err05"
 Nonce modifié rejeté par Bob avec l'erreur "messenger : Err03"
+Horodatage modifié rejeté par Bob avec l'erreur "messenger : Err03"
+Paquet périmé rejeté par Bob avec l'erreur "messenger : Err04"
 ```
 
 
