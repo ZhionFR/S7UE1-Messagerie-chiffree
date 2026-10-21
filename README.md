@@ -1,6 +1,6 @@
 # S7UE1-Messagerie-chiffree
 
-Ce repo contient du projet de cryptographie d'octobre 2026.
+Ce repo contient le projet de cryptographie d'octobre 2026.
 
 - [Cahier des charges](#cahier-des-charges)
   - [Description](#description)
@@ -22,13 +22,11 @@ Ce repo contient du projet de cryptographie d'octobre 2026.
     - [send_message](#send_message)
     - [receive_message](#receive_message)
 - [Tests & erreurs](#tests--erreurs)
-    - [Tests](#tests)
-    - [Codes d'erreurs](#codes-derreur)
+  - [Tests](#tests)
+  - [Codes d'erreurs](#codes-derreur)
 
 
-# Cahier des charges
-
-## Description
+# Description
 
 Alice et Bob communiquent de manière chiffrée.
 
@@ -43,7 +41,6 @@ Alice :
 1. Génère une clé AES et HMAC (aléatoire)
 2. Chiffre les deux clés en RSA-OAEP avec la clé de Bob
 3. Chiffre le message en AES-256-CBC avec un IV neuf
-4. Calcule le HMAC-SHA256 de l'IV + message chiffré
 4. Génère un horodatage et un nonce (16 octets aléatoires), puis calcule le HMAC-SHA256 de timestamp ‖ nonce ‖ IV ‖ message chiffré
 5. Transmet à Bob {clés chiffrées, IV, message chiffré, HMAC, timestamp, nonce}
 
@@ -69,6 +66,7 @@ messagerie/
 ├── rsa_utils.py
 ├── messenger.py
 ├── main.py
+├── test.py
 └── README.md
 ```
 
@@ -91,7 +89,7 @@ messagerie/
 
 - `send_message(plaintext, rsa_public_key) -> {cles_chiffrees, iv, ciphertext, hmac, timestamp, nonce}` (en hex)
 - `receive_message(packet, rsa_private_key, replay_cache=None, now=None) -> plaintext`
-  - Lève une exception si le message est faux
+  - Lève une exception si le message n'est pas intègre
 - `ReplayCache` : mémoire des nonces déjà acceptés
 
 **`main.py`**
@@ -175,14 +173,11 @@ Description :
 
 - Tire `aes_key` et `hmac_key` (32 octets chacune, `os.urandom`), nouvelles à chaque message.
 - Chiffre le message : `iv, ciphertext = aes_cbc_encrypt(plaintext, aes_key)`.
-- Calcule `hmac = HMAC-SHA256(hmac_key, iv || ciphertext)`.
+- Ajoute `timestamp` (secondes Unix, 8 octets big-endian) et `nonce` (16 octets, `os.urandom`).
+- Calcule `hmac = HMAC-SHA256(hmac_key, timestamp || nonce || iv || ciphertext)`.
 - Chiffre `aes_key || hmac_key` (64 octets) avec RSA-OAEP.
 
 Sortie : dictionnaire de chaînes en hex.
-
-Ajouts : 
-- Ajoute `timestamp` (secondes Unix, 8 octets big-endian) et `nonce` (16 octets, `os.urandom`).
-- Le HMAC couvre désormais `timestamp || nonce || iv || ciphertext`.
 
 
 #### receive_message
@@ -200,7 +195,8 @@ Description :
 - Fenêtre de temps : `|now - timestamp| <= 60 s`. Nonce absent du cache, puis ajouté
 - Déchiffre en AES-CBC, retire le padding, décode en UTF-8 (voir [aes_cbc_decrypt](#aes_cbc_decrypt)).
 
-Sortie : le message en clair (sauf s'il a été modifié).
+Sortie : le message en clair.
+-> la fonction lève une ValueError avec un code en cas de corruption du paquet
 
 > Le nonce n'est enregistré qu'**après** le MAC. Avant, Eve pourrait consommer la place d'un vrai paquet en envoyant un faux paquet portant le même nonce (DoS).
 > `replay_cache` : par défaut un cache partagé par le processus. `now` n'existe que pour les tests (simuler un paquet périmé sans attendre).
@@ -220,7 +216,30 @@ Mémorise les nonces acceptés (`nonce -> timestamp`).
 
 ## Tests
 
-test.py est autoporteur : lancer `python test.py` teste et renvoie les résultats pour chaque fonction des autres modules (PASS ou FAIL, ERROR si erreur inattendue)
+test.py est autoporteur : lancer `python test.py` teste et renvoie les résultats pour chaque groupe (`crypto_utils`, `rsa_utils`, `messenger`, `anti_rejeu`) des autres modules (PASS ou FAIL, ERROR si erreur inattendue)
+Il accepte aussi `python test.py <group_name>` et `--list` (liste les groupes), et peut afficher SKIP si des groupes ne sont pas testés.
+
+### Resultats des tests
+
+Sortie attendue de `python test.py` :
+```
+[PASS] crypto_utils
+[PASS] rsa_utils
+[PASS] messenger
+[PASS] anti_rejeu
+```
+
+| Résultat | Signification                                                    |
+| -------- | ---------------------------------------------------------------- |
+| `PASS`   | Toutes les assertions du groupe sont vérifiées                   |
+| `FAIL`   | Une assertion a échoué (la trace est affichée)                   |
+| `ERROR`  | Exception inattendue (autre qu'une assertion)                    |
+| `SKIP`   | Groupe pas encore implémenté (`NotImplementedError`)             |
+
+Le code de retour est `0` si tout passe, `1` s'il y a au moins un `FAIL` ou `ERROR`. Un nom de groupe inconnu arrête le script avec un message d'erreur (Test inconnu).
+
+> Les tests génèrent plusieurs paires RSA 3072 bits, l'exécution n'est donc pas instantanée mais ne doit pas prendre plus de quelques secondes.
+
 
 ## Codes d'erreur
 
@@ -234,8 +253,8 @@ test.py est autoporteur : lancer `python test.py` teste et renvoie les résultat
 | rsa\_utils    | Err01 | Clés à chiffrer : taille hors de 1 à 318 octets                            |
 | rsa\_utils    | Err02 | Chiffré RSA de taille ≠ k octets                                           |
 | rsa\_utils    | Err03 | Déchiffrement RSA échoué                                                   |
-| messenger     | Err01 | Paquet mal formé (champ manquant, hex invalide, taille timestamp ≠ 8 ou nonce ≠ 16) | <!-- Hérésie tolérée par manque d'envie de tout décaler...  -->
+| messenger     | Err01 | Paquet mal formé (champ manquant, hex invalide, taille timestamp ≠ 8 ou nonce ≠ 16) |
 | messenger     | Err02 | Clés déchiffrées ≠ 64 octets                                               |
 | messenger     | Err03 | MAC invalide (données, timestamp ou nonce altérés)                         |
 | messenger     | Err04 | Horodatage hors fenêtre (périmé ou dans le futur, écart > 60 s)            |
-| messenger     | Err05 | Rejeu détecté (nonce déjà vu)     
+| messenger     | Err05 | Rejeu détecté (nonce déjà vu)                                              |
