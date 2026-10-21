@@ -2,6 +2,7 @@
 import os
 import sys
 import hashlib
+import time
 import hmac as std_hmac
 import traceback
 from cryptography.hazmat.primitives import padding as sym_padding
@@ -10,7 +11,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 ### Pas * pour redondance
 from crypto_utils import aes_cbc_encrypt, aes_cbc_decrypt, compute_hmac, verify_hmac
 from rsa_utils import generer_paire_rsa, rsa_chiffrer_cle, rsa_dechiffrer_cle
-from messenger import send_message, receive_message
+from messenger import send_message, receive_message, ReplayCache, REPLAY_WINDOW
 
 ## Helpers
 
@@ -145,7 +146,7 @@ def test_messenger():
     # Aller-retour
     for msg in ["Bonjour", "", "A" * 16, "Bonjour é€ 🔐", "x" * 10_000]:
         packet = send_message(msg, pub)
-        assert set(packet) == {"cles_chiffrees", "iv", "ciphertext", "hmac"}
+        assert set(packet) == {"cles_chiffrees", "iv", "ciphertext", "hmac", "timestamp", "nonce"}
         assert receive_message(packet, priv) == msg
 
     # Tailles (en hex : 2 caractères par octet)
@@ -153,15 +154,17 @@ def test_messenger():
     assert len(packet["cles_chiffrees"]) == 2 * (3072 // 8)
     assert len(packet["iv"]) == 32
     assert len(packet["hmac"]) == 64
+    assert len(packet["timestamp"]) == 16
+    assert len(packet["nonce"]) == 32
 
     # Deux envois du même message -> paquets différents
     assert send_message("Bonjour", pub) != packet
 
-    # Altération de iv, ciphertext ou hmac -> Err03
+    # Altération de iv, ciphertext, hmac, timestamp ou nonce -> Err03
     def flip(s):
         return ("1" if s[0] == "0" else "0") + s[1:]
 
-    for field in ("iv", "ciphertext", "hmac"):
+    for field in ("iv", "ciphertext", "hmac", "timestamp", "nonce"):
         bad = {**packet, field: flip(packet[field])}
         err(lambda: receive_message(bad, priv), "Err03")
 
@@ -179,10 +182,67 @@ def test_messenger():
     err(lambda: receive_message({**packet, "iv": "zz"}, priv), "Err01")
     err(lambda: receive_message({**packet, "hmac": "abc"}, priv), "Err01")  # longueur impaire
     err(lambda: receive_message({**packet, "iv": None}, priv), "Err01")
+    err(lambda: receive_message({k: v for k, v in packet.items() if k != "nonce"}, priv), "Err01")
+    err(lambda: receive_message({k: v for k, v in packet.items() if k != "timestamp"}, priv), "Err01")
+    err(lambda: receive_message({**packet, "nonce": "00"}, priv), "Err01")      # mauvaise taille
+    err(lambda: receive_message({**packet, "timestamp": "00"}, priv), "Err01")  # mauvaise taille
+
 
     # Err02 : clés déchiffrées de taille ≠ 64 octets
     forged = {**packet, "cles_chiffrees": rsa_chiffrer_cle(os.urandom(48), pub).hex()}
     err(lambda: receive_message(forged, priv), "Err02")
+
+
+## Tests : anti-rejeu
+
+def test_anti_rejeu():
+    err = lambda f, c: expect_error(f, c, module="messenger")
+
+    def flip(s):
+        return ("1" if s[0] == "0" else "0") + s[1:]
+
+    priv, pub = generer_paire_rsa()
+    now = int(time.time())
+
+    # Premier envoi accepté, rejeu à l'identique rejeté (Err05)
+    cache = ReplayCache()
+    packet = send_message("Bonjour", pub)
+    assert receive_message(packet, priv, cache, now=now) == "Bonjour"
+    err(lambda: receive_message(packet, priv, cache, now=now), "Err05")
+
+    # Même texte renvoyé légitimement -> nouveau nonce, accepté
+    assert receive_message(send_message("Bonjour", pub), priv, cache, now=now) == "Bonjour"
+    assert len(cache) == 2
+
+    # Eve change le nonce pour contourner le cache -> le MAC le détecte (Err03)
+    err(lambda: receive_message({**packet, "nonce": flip(packet["nonce"])}, priv, cache, now=now), "Err03")
+
+    # Eve rafraîchit le timestamp pour rejouer un vieux paquet -> le MAC le détecte (Err03)
+    err(lambda: receive_message({**packet, "timestamp": flip(packet["timestamp"])}, priv, cache, now=now), "Err03")
+
+    # Paquet périmé ou venant du futur -> Err04 (marge de 5 s pour éviter les effets de bord)
+    cache = ReplayCache()
+    packet = send_message("Bonjour", pub)
+    err(lambda: receive_message(packet, priv, cache, now=now + REPLAY_WINDOW + 5), "Err04")
+    err(lambda: receive_message(packet, priv, cache, now=now - REPLAY_WINDOW - 5), "Err04")
+    assert len(cache) == 0  # un paquet rejeté n'est pas mémorisé
+
+    # Un faux paquet (MAC invalide) ne « brûle » pas le nonce du vrai
+    forged = {**packet, "hmac": flip(packet["hmac"])}
+    err(lambda: receive_message(forged, priv, cache, now=now), "Err03")
+    assert len(cache) == 0
+    assert receive_message(packet, priv, cache, now=now) == "Bonjour"
+
+    # Purge : les nonces sortis de la fenêtre sont oubliés (la mémoire reste bornée)
+    assert len(cache) == 1
+    cache.purge(now + REPLAY_WINDOW + 5)
+    assert len(cache) == 0
+
+    # Cache par défaut (sans argument) : rejeu rejeté aussi
+    packet = send_message("Bonjour", pub)
+    assert receive_message(packet, priv) == "Bonjour"
+    err(lambda: receive_message(packet, priv), "Err05")
+
 
 
 ## Registre : nom du groupe -> fonction
@@ -190,6 +250,7 @@ TESTS = {
     "crypto_utils": test_crypto_utils,
     "rsa_utils": test_rsa_utils,
     "messenger": test_messenger,
+    "anti_rejeu": test_anti_rejeu,
 }
 
 
@@ -214,6 +275,7 @@ def run(names):
 
 
 if __name__ == "__main__":
+    # Pour tests localisés, par défaut (sans arguments) on teste tout
     args = sys.argv[1:]
     if args == ["--list"]:
         print("\n".join(TESTS))
