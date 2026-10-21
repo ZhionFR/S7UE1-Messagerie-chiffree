@@ -44,13 +44,15 @@ Alice :
 2. Chiffre les deux clés en RSA-OAEP avec la clé de Bob
 3. Chiffre le message en AES-256-CBC avec un IV neuf
 4. Calcule le HMAC-SHA256 de l'IV + message chiffré
-5. Transmet à Bob {clés chiffrées, IV, message chiffré, HMAC}
+4. Génère un horodatage et un nonce (16 octets aléatoires), puis calcule le HMAC-SHA256 de timestamp ‖ nonce ‖ IV ‖ message chiffré
+5. Transmet à Bob {clés chiffrées, IV, message chiffré, HMAC, timestamp, nonce}
 
 Bob :
 
 1. Déchiffre les clés avec sa clé privée
 2. Vérifie le HMAC et rejette le paquet s'il est faux
-3. Déchiffre le message
+3. Rejette le paquet si le timestamp est hors de la fenêtre de 60 s ou si le nonce a déjà été vu (anti-rejeu)
+4. Déchiffre le message
 
 ## Specs
 
@@ -87,9 +89,10 @@ messagerie/
 
 **`messenger.py`**
 
-- `send_message(plaintext, rsa_public_key) -> {cles_chiffrees, iv, ciphertext, hmac}` (en hex)
-- `receive_message(packet, rsa_private_key) -> plaintext`
-- Lève une exception si le message est faux
+- `send_message(plaintext, rsa_public_key) -> {cles_chiffrees, iv, ciphertext, hmac, timestamp, nonce}` (en hex)
+- `receive_message(packet, rsa_private_key, replay_cache=None, now=None) -> plaintext`
+  - Lève une exception si le message est faux
+- `ReplayCache` : mémoire des nonces déjà acceptés
 
 **`main.py`**
 
@@ -177,22 +180,40 @@ Description :
 
 Sortie : dictionnaire de chaînes en hex.
 
+Ajouts : 
+- Ajoute `timestamp` (secondes Unix, 8 octets big-endian) et `nonce` (16 octets, `os.urandom`).
+- Le HMAC couvre désormais `timestamp || nonce || iv || ciphertext`.
+
+
 #### receive_message
 
-`receive_message(packet, rsa_private_key)`
+`receive_message(packet, rsa_private_key, replay_cache=None, now=None)`
 
 Vérifie et déchiffre un paquet produit par `send_message`.
 
 Description :
 
-- Décode les 4 champs hex.
+- Décodage des 6 champs hex, tailles de `timestamp` (8) et `nonce` (16) → Err01
 - Déchiffre `cles_chiffrees` avec la clé privée RSA.
 - Sépare AES (32 premiers octets) et HMAC (32 suivants).
 - Vérifie le MAC en temps constant, *avant* tout déchiffrement AES.
+- Fenêtre de temps : `|now - timestamp| <= 60 s`. Nonce absent du cache, puis ajouté
 - Déchiffre en AES-CBC, retire le padding, décode en UTF-8 (voir [aes_cbc_decrypt](#aes_cbc_decrypt)).
 
 Sortie : le message en clair (sauf s'il a été modifié).
 
+> Le nonce n'est enregistré qu'**après** le MAC. Avant, Eve pourrait consommer la place d'un vrai paquet en envoyant un faux paquet portant le même nonce (DoS).
+> `replay_cache` : par défaut un cache partagé par le processus. `now` n'existe que pour les tests (simuler un paquet périmé sans attendre).
+
+
+#### ReplayCache
+
+Mémorise les nonces acceptés (`nonce -> timestamp`).
+
+- `add(nonce, timestamp)`, `nonce in cache`, `len(cache)`
+- `purge(now)` : oublie les nonces dont le timestamp est sorti de la fenêtre.
+
+> Invariant : un nonce est conservé au moins aussi longtemps que son timestamp reste acceptable. Après ce délai, le paquet serait de toute façon rejeté par la fenêtre (Err04), donc la purge ne rouvre aucun rejeu et la mémoire reste bornée.
 
 
 # Tests & Erreurs
@@ -201,19 +222,20 @@ Sortie : le message en clair (sauf s'il a été modifié).
 
 test.py est autoporteur : lancer `python test.py` teste et renvoie les résultats pour chaque fonction des autres modules (PASS ou FAIL, ERROR si erreur inattendue)
 
-
 ## Codes d'erreur
 
-| Module | Code | Signification |
-|---|---|---|
-| crypto_utils | Err01 | Taille de clé AES ≠ 32 octets |
-| crypto_utils | Err02 | Taille d'IV ≠ 16 octets |
-| crypto_utils | Err03 | Chiffré vide ou non multiple de 16 |
-| crypto_utils | Err04 | Déchiffrement échoué (padding ou UTF-8) |
-| crypto_utils | Err05 | Taille de clé HMAC ≠ 32 octets |
-| rsa_utils | Err01 | Clés à chiffrer : taille hors de 1 à 318 octets |
-| rsa_utils | Err02 | Chiffré RSA de taille ≠ k octets |
-| rsa_utils | Err03 | Déchiffrement RSA échoué |
-| messenger | Err01 | Paquet mal formé |
-| messenger | Err02 | Clés déchiffrées ≠ 64 octets |
-| messenger | Err03 | MAC invalide |
+| Module        | Code  | Signification                                                              |
+| ------------- | ----- | -------------------------------------------------------------------------- |
+| crypto\_utils | Err01 | Taille de clé AES ≠ 32 octets                                              |
+| crypto\_utils | Err02 | Taille d'IV ≠ 16 octets                                                    |
+| crypto\_utils | Err03 | Chiffré vide ou non multiple de 16                                         |
+| crypto\_utils | Err04 | Déchiffrement échoué (padding ou UTF-8)                                    |
+| crypto\_utils | Err05 | Taille de clé HMAC ≠ 32 octets                                             |
+| rsa\_utils    | Err01 | Clés à chiffrer : taille hors de 1 à 318 octets                            |
+| rsa\_utils    | Err02 | Chiffré RSA de taille ≠ k octets                                           |
+| rsa\_utils    | Err03 | Déchiffrement RSA échoué                                                   |
+| messenger     | Err01 | Paquet mal formé (champ manquant, hex invalide, taille timestamp ≠ 8 ou nonce ≠ 16) | <!-- Hérésie tolérée par manque d'envie de tout décaler...  -->
+| messenger     | Err02 | Clés déchiffrées ≠ 64 octets                                               |
+| messenger     | Err03 | MAC invalide (données, timestamp ou nonce altérés)                         |
+| messenger     | Err04 | Horodatage hors fenêtre (périmé ou dans le futur, écart > 60 s)            |
+| messenger     | Err05 | Rejeu détecté (nonce déjà vu)     
