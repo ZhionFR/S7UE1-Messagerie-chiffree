@@ -2,7 +2,7 @@
 import os
 import time
 from crypto_utils import aes_cbc_encrypt, aes_cbc_decrypt, compute_hmac, verify_hmac
-from rsa_utils import generer_paire_rsa, rsa_chiffrer_cle, rsa_dechiffrer_cle
+from rsa_utils import generer_paire_rsa, rsa_chiffrer_cle, rsa_dechiffrer_cle, rsa_signer, rsa_verifier
 from messenger import send_message, receive_message, ReplayCache, REPLAY_WINDOW
 
 ## Constantes
@@ -21,14 +21,14 @@ def altere_hex(valeur: str) -> str:
 
 def doit_etre_rejete(description: str, paquet: dict, cache: ReplayCache | None = None, now: int | None = None) -> None:
     try:
-        receive_message(paquet, bob_private, cache, now)
+        receive_message(paquet, bob_private, alice_public, cache, now)
     except ValueError as e:
         print(f"{description} rejeté par Bob avec l'erreur \"{e}\"")
     else:
         raise SystemExit(f"ERREUR : {description} accepté !")
 
 
-## ---------- Partie 1 : déroulé étape par étape (fonctions de bas niveau) ----------
+print("\n---------- Partie 1 : déroulé étape par étape (fonctions de bas niveau) ----------")
 
 titre("Bob")
 ## Bob genere sa paire de cles RSA
@@ -38,6 +38,10 @@ bob_private, bob_public = generer_paire_rsa()
 print("Bob a généré sa paire RSA 3072 bits et publie sa clé publique.")
 
 titre("Alice")
+## Alice genere sa propre paire RSA (signature) et publie sa cle publique
+alice_private, alice_public = generer_paire_rsa()
+print("Alice a généré sa paire RSA 3072 bits de signature et publie sa clé publique.")
+
 ## Alice genere une cle AES et HMAC
 aes_key = os.urandom(32)
 hmac_key = os.urandom(32)
@@ -60,6 +64,10 @@ print("Horodatage (8 octets) et nonce (16 octets) générés.")
 mac = compute_hmac(hmac_key, timestamp + nonce + iv + ciphertext)
 print(f"HMAC-SHA256 : {mac.hex()}")
 
+## Alice signe l'ensemble du paquet (y compris les cles chiffrees) avec sa cle privee
+signature = rsa_signer(cles_chiffrees + timestamp + nonce + iv + mac + ciphertext, alice_private)
+print(f"Signature RSA-PSS : {len(signature)} octets.")
+
 ## Alice transmets les cles a Bob (paquet en hex, c'est ce que voit Eve)
 packet = {
     "cles_chiffrees": cles_chiffrees.hex(),
@@ -68,6 +76,7 @@ packet = {
     "hmac": mac.hex(),
     "timestamp": timestamp.hex(),
     "nonce": nonce.hex(),
+    "signature": signature.hex(),
 }
 
 titre("Eve (ce qui circule sur le réseau)")
@@ -81,6 +90,12 @@ r_ciphertext = bytes.fromhex(packet["ciphertext"])
 r_mac = bytes.fromhex(packet["hmac"])
 r_timestamp = bytes.fromhex(packet["timestamp"])
 r_nonce = bytes.fromhex(packet["nonce"])
+r_signature = bytes.fromhex(packet["signature"])
+
+## Bob verifie la signature d'Alice AVANT tout dechiffrement
+if not rsa_verifier(r_cles_chiffrees + r_timestamp + r_nonce + r_iv + r_mac + r_ciphertext, r_signature, alice_public):
+    raise SystemExit("Signature invalide : paquet rejeté.")
+print("Signature d'Alice valide.")
 
 ## Bob dechiffre les cles avec sa cle privee
 cles = rsa_dechiffrer_cle(r_cles_chiffrees, bob_private)
@@ -91,7 +106,7 @@ if not verify_hmac(r_hmac_key, r_timestamp + r_nonce + r_iv + r_ciphertext, r_ma
     raise SystemExit("HMAC invalide : paquet rejeté.")
 print("HMAC valide.")
 
-## Bob verifie la fraicheur du paquet, puis que le nonce est inedit (seulement apres le HMAC)
+## Bob verifie la fraicheur du paquet, puis que le nonce est inedit (seulement apres la signature et le HMAC)
 if abs(time.time() - int.from_bytes(r_timestamp, "big")) > REPLAY_WINDOW:
     raise SystemExit("Horodatage hors fenêtre : paquet rejeté.")
 nonces_vus = set()
@@ -106,27 +121,27 @@ print(f"Message déchiffré : {resultat}")
 assert resultat == MESSAGE
 
 
-## ---------- Partie 2 : même échange via messenger.py ----------
+print("\n---------- Partie 2 : même échange via messenger.py ----------")
 
 titre("Même échange via send_message / receive_message")
-packet = send_message(MESSAGE, bob_public)
-assert receive_message(packet, bob_private) == MESSAGE
+packet = send_message(MESSAGE, bob_public, alice_private)
+assert receive_message(packet, bob_private, alice_public) == MESSAGE
 print("Aller-retour OK.")
 
 
-## ---------- Partie 3 : Eve modifie le paquet ----------
+print("\n---------- Partie 3 : Eve modifie le paquet ----------")
 
 titre("Eve altère le chiffré")
 altere = {**packet, "ciphertext": altere_hex(packet["ciphertext"])}
 doit_etre_rejete("Paquet", altere)
 
 
-## ---------- Partie 4 : Eve rejoue un paquet valide ----------
+print("\n---------- Partie 4 : Eve rejoue un paquet valide ----------")
 
 titre("Eve rejoue un paquet intercepté")
 cache = ReplayCache()
-packet = send_message(MESSAGE, bob_public)
-assert receive_message(packet, bob_private, cache) == MESSAGE
+packet = send_message(MESSAGE, bob_public, alice_private)
+assert receive_message(packet, bob_private, alice_public, cache) == MESSAGE
 print("Premier envoi accepté par Bob.")
 doit_etre_rejete("Rejeu", packet, cache)
 
@@ -137,5 +152,32 @@ doit_etre_rejete("Nonce modifié", {**packet, "nonce": altere_hex(packet["nonce"
 doit_etre_rejete("Horodatage modifié", {**packet, "timestamp": altere_hex(packet["timestamp"])}, cache)
 
 ## Un paquet authentique mais trop ancien est rejeté (on simule +120 s sans attendre)
-frais = send_message(MESSAGE, bob_public)
+frais = send_message(MESSAGE, bob_public, alice_private)
 doit_etre_rejete("Paquet périmé", frais, ReplayCache(), now=int(time.time()) + 2 * REPLAY_WINDOW)
+
+
+print("\n---------- Partie 5 : Eve usurpe Alice ou tente de « brûler » un nonce ----------")
+
+titre("Eve usurpe l'identité d'Alice")
+## Eve ne connait que la cle publique de Bob : elle peut chiffrer et calculer un MAC valide, mais pas signer pour Alice
+eve_private, eve_public = generer_paire_rsa()
+doit_etre_rejete("Paquet forgé (signé par Eve)", send_message("Virement validé. Alice.", bob_public, eve_private))
+
+titre("Eve tente de faire rejeter le vrai paquet d'Alice")
+cache = ReplayCache()
+vrai = send_message(MESSAGE, bob_public, alice_private)
+## Eve copie le nonce et la date du vrai paquet, mais remplace les clés par les siennes et recalcule un MAC valide
+eve_aes, eve_hmac = os.urandom(32), os.urandom(32)
+piege = {
+    **vrai,
+    "cles_chiffrees": rsa_chiffrer_cle(eve_aes + eve_hmac, bob_public).hex(),
+    "hmac": compute_hmac(
+        eve_hmac,
+        bytes.fromhex(vrai["timestamp"]) + bytes.fromhex(vrai["nonce"])
+        + bytes.fromhex(vrai["iv"]) + bytes.fromhex(vrai["ciphertext"]),
+    ).hex(),
+}
+doit_etre_rejete("Paquet piégé (clés d'Eve, MAC valide, signature d'Alice recopiée)", piege, cache)
+assert len(cache) == 0
+assert receive_message(vrai, bob_private, alice_public, cache) == MESSAGE
+print("Le vrai paquet d'Alice est ensuite accepté : le nonce n'a pas été consommé.")
