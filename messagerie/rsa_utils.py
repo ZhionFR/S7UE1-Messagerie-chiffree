@@ -1,4 +1,5 @@
 ## Imports
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -45,3 +46,25 @@ def rsa_dechiffrer_cle(cles_chiffrees: bytes, rsa_private_key: RSAPrivateKey) ->
     except ValueError:
         raise ValueError("rsa_utils : Err03") from None
     ## rsa_utils : Err03 : RSA decryption failed (wrong key or corrupted data).
+
+
+## _pss() -> padding        ## encapsulation pour lisibilité
+def _pss() -> asym_padding.PSS:
+    return asym_padding.PSS(
+        mgf=asym_padding.MGF1(algorithm=hashes.SHA256()),
+        salt_length=asym_padding.PSS.DIGEST_LENGTH,
+    )
+
+
+## rsa_signer(data, rsa_private_key) -> bytes
+def rsa_signer(data: bytes, rsa_private_key: RSAPrivateKey) -> bytes:
+    return rsa_private_key.sign(data, _pss(), hashes.SHA256())
+
+
+## rsa_verifier(data, signature, rsa_public_key) -> bool
+def rsa_verifier(data: bytes, signature: bytes, rsa_public_key: RSAPublicKey) -> bool:
+    try:
+        rsa_public_key.verify(signature, data, _pss(), hashes.SHA256())
+        return True
+    except InvalidSignature:
+        return False
