@@ -116,6 +116,8 @@ messagerie/
 
 Exemple d'output attendu : 
 
+<details>
+
 ```
 $python main.py
 
@@ -176,6 +178,8 @@ Paquet forgé (signé par Eve) rejeté par Bob avec l'erreur "messenger : Err06"
 Paquet piégé (clés d'Eve, MAC valide, signature d'Alice recopiée) rejeté par Bob avec l'erreur "messenger : Err06"
 Le vrai paquet d'Alice est ensuite accepté : le nonce n'a pas été consommé.
 ```
+
+</details>
 
 Les limites connues et les évolutions possibles sont listées dans la section [Roadmap et limites](#roadmap-et-limites).
 
