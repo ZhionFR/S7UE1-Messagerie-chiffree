@@ -17,9 +17,12 @@ Ce repo contient le projet de cryptographie d'octobre 2026.
     - [generer_paire_rsa](#generer_paire_rsa)
     - [rsa_chiffrer_cle](#rsa_chiffrer_cle)
     - [rsa_dechiffrer_cle](#rsa_dechiffrer_cle)
+    - [rsa_signer](#rsa_signer)
+    - [rsa_verifier](#rsa_verifier)
   - [Doc: messenger](#doc-messenger)
     - [send_message](#send_message)
     - [receive_message](#receive_message)
+    - [sign_packet](#sign_packet)
     - [ReplayCache](#replaycache)
 - [Tests & erreurs](#tests--erreurs)
   - [Tests](#tests)
@@ -28,6 +31,7 @@ Ce repo contient le projet de cryptographie d'octobre 2026.
       - [crypto_utils](#crypto_utils)
       - [rsa_utils](#rsa_utils)
       - [messenger](#messenger)
+      - [authentification](#authentification)
       - [anti_rejeu](#anti_rejeu)
   - [Codes d'erreur](#codes-derreur)
 - [Roadmap et limites](#roadmap-et-limites)
@@ -35,13 +39,14 @@ Ce repo contient le projet de cryptographie d'octobre 2026.
 
 # Description
 
-Alice et Bob communiquent de manière chiffrée.
+Alice et Bob communiquent de manière **chiffrée** et **authentifiée**.
 
-Eve voit les paquets mais ne peut pas lire les messages.
+Eve voit les paquets mais ne peut pas **lire** les messages, ni en **fabriquer** un au nom d'Alice.
 
 ## Processus
 
 Bob génère sa paire de clés RSA et publie la clé publique.
+Alice génère sa propre paire RSA (signature) et publie sa clé publique.
 
 Alice :
 
@@ -49,20 +54,23 @@ Alice :
 2. Chiffre les deux clés en RSA-OAEP avec la clé de Bob
 3. Chiffre le message en AES-256-CBC avec un IV neuf
 4. Génère un horodatage et un nonce (16 octets aléatoires), puis calcule le HMAC-SHA256 de timestamp ‖ nonce ‖ IV ‖ message chiffré
-5. Transmet à Bob {clés chiffrées, IV, message chiffré, HMAC, timestamp, nonce}
+5. Signe (RSA-PSS SHA-256, clé privée d'Alice) clés chiffrées ‖ timestamp ‖ nonce ‖ IV ‖ HMAC ‖ message chiffré
+6. Transmet à Bob {clés chiffrées, IV, message chiffré, HMAC, timestamp, nonce, signature}
 
 Bob :
 
-1. Déchiffre les clés avec sa clé privée
-2. Vérifie le HMAC et rejette le paquet s'il est faux
-3. Rejette le paquet si le timestamp est hors de la fenêtre de 60 s ou si le nonce a déjà été vu (anti-rejeu)
-4. Déchiffre le message
+1. Vérifie la signature d'Alice et rejette le paquet si elle est fausse (avant tout déchiffrement)
+2. Déchiffre les clés avec sa clé privée
+3. Vérifie le HMAC et rejette le paquet s'il est faux
+4. Rejette le paquet si le timestamp est hors de la fenêtre de 60 s ou si le nonce a déjà été vu (anti-rejeu)
+5. Déchiffre le message
 
 ## Specs
 
 - RSA transporte les clés
 - AES chiffre le message
 - HMAC pour l'intégrité
+- Signature RSA-PSS pour l'authenticité de l'expéditeur
 - Python3 + librairie `cryptography`
 
 ## Architecture
@@ -91,12 +99,15 @@ messagerie/
 - `generer_paire_rsa() -> (private_key, public_key)`
 - `rsa_chiffrer_cle(cles, rsa_public_key) -> bytes`
 - `rsa_dechiffrer_cle(cles_chiffrees, rsa_private_key) -> bytes`
+- `rsa_signer(data, rsa_private_key) -> bytes`
+- `rsa_verifier(data, signature, rsa_public_key) -> bool`
 
 **`messenger.py`**
 
-- `send_message(plaintext, rsa_public_key) -> {cles_chiffrees, iv, ciphertext, hmac, timestamp, nonce}` (en hex)
-- `receive_message(packet, rsa_private_key, replay_cache=None, now=None) -> plaintext`
-  - Lève une exception si le message n'est pas intègre
+- `send_message(plaintext, rsa_public_key, sender_private_key) -> {cles_chiffrees, iv, ciphertext, hmac, timestamp, nonce, signature}` (en hex)
+- `receive_message(packet, rsa_private_key, sender_public_key, replay_cache=None, now=None) -> plaintext`
+  - Lève une exception si le message n'est pas intègre ou pas authentique
+- `sign_packet(packet, sender_private_key) -> packet` : (re)calcule le champ `signature` d'un paquet
 - `ReplayCache` : mémoire des nonces déjà acceptés
 
 **`main.py`**
@@ -108,42 +119,65 @@ Exemple d'output attendu :
 ```
 $python main.py
 
+---------- Partie 1 : déroulé étape par étape (fonctions de bas niveau) ----------
+
 === Bob ===
 Bob a généré sa paire RSA 3072 bits et publie sa clé publique.
 
 === Alice ===
+Alice a généré sa paire RSA 3072 bits de signature et publie sa clé publique.
 Clés AES et HMAC générées (32 octets chacune).
 Clés chiffrées en RSA-OAEP : 384 octets.
 Message chiffré : IV 16 octets, chiffré 48 octets.
 Horodatage (8 octets) et nonce (16 octets) générés.
-HMAC-SHA256 : 8f12d6a1485d9f5d98c48aab1dd3dd29a1f0c2d84a116ee733db7b827ce22338
+HMAC-SHA256 : d1297f88aa0f9be21c6b92c30dd0652ffa78293548325f97c493c5e7104bb408
+Signature RSA-PSS : 384 octets.
 
 === Eve (ce qui circule sur le réseau) ===
-cles_chiffrees  c64575a550b2989f20e2db0af61f048b4b493f505f9cc06c...
-iv              ffafbc1aa7c3c8cb2139a6a8991ace4c
-ciphertext      812103701907f2b8a30ad7d444d7c976868e175ae473ebe1...
-hmac            8f12d6a1485d9f5d98c48aab1dd3dd29a1f0c2d84a116ee7...
-timestamp       000000006ad8d6b2
-nonce           73667321ab4f679d4ac4ee95587e4308
+cles_chiffrees  9fda66f308a6e89fe43bea2d70eee5a2587ef5673c8b94e7...
+iv              55ab7f3bad2e2f6156330d5dcc3b67c3
+ciphertext      1e056a4658bf6face33a18c6a101849d8547fc2db7c10d73...
+hmac            d1297f88aa0f9be21c6b92c30dd0652ffa78293548325f97...
+timestamp       000000006ad9c4c5
+nonce           50525b1fb2712b9df9a9e33d1180ac2b
+signature       293838d32194fe5a83a3d358ff1cab97a6e0bc970adc44fe...
 
 === Bob ===
+Signature d'Alice valide.
 HMAC valide.
 Horodatage et nonce valides.
 Message déchiffré : Salut Bob, ce message est secret !! Alice.
 
+---------- Partie 2 : même échange via messenger.py ----------
+
 === Même échange via send_message / receive_message ===
 Aller-retour OK.
 
+---------- Partie 3 : Eve modifie le paquet ----------
+
 === Eve altère le chiffré ===
-Paquet rejeté par Bob avec l'erreur "messenger : Err03"
+Paquet rejeté par Bob avec l'erreur "messenger : Err06"
+
+---------- Partie 4 : Eve rejoue un paquet valide ----------
 
 === Eve rejoue un paquet intercepté ===
 Premier envoi accepté par Bob.
 Rejeu rejeté par Bob avec l'erreur "messenger : Err05"
-Nonce modifié rejeté par Bob avec l'erreur "messenger : Err03"
-Horodatage modifié rejeté par Bob avec l'erreur "messenger : Err03"
+Nonce modifié rejeté par Bob avec l'erreur "messenger : Err06"
+Horodatage modifié rejeté par Bob avec l'erreur "messenger : Err06"
 Paquet périmé rejeté par Bob avec l'erreur "messenger : Err04"
+
+---------- Partie 5 : Eve usurpe Alice ou tente de « brûler » un nonce ----------
+
+=== Eve usurpe l'identité d'Alice ===
+Paquet forgé (signé par Eve) rejeté par Bob avec l'erreur "messenger : Err06"
+
+=== Eve tente de faire rejeter le vrai paquet d'Alice ===
+Paquet piégé (clés d'Eve, MAC valide, signature d'Alice recopiée) rejeté par Bob avec l'erreur "messenger : Err06"
+Le vrai paquet d'Alice est ensuite accepté : le nonce n'a pas été consommé.
 ```
+
+Les limites connues et les évolutions possibles sont listées dans la section [Roadmap et limites](#roadmap-et-limites).
 
 
 # Documentation du projet
@@ -211,13 +245,28 @@ mLen_max = 384 − 64 − 2 = 318 octets
 
 Déchiffre avec la clé privée. Une seule erreur (Err03) pour toute cause d'échec.
 
+#### rsa_signer
+
+`rsa_signer(data, rsa_private_key)`
+
+Signe `data` avec RSA-PSS (MGF1-SHA256, hash SHA-256, sel de 32 octets). Retourne la signature (384 octets pour RSA 3072 bits).
+
+> PSS est probabiliste (sel aléatoire) : deux signatures du même message diffèrent, et sont toutes deux valides.
+> PSS est préféré à PKCS#1 v1.5, qui n'a pas de preuve de sécurité aussi solide.
+
+#### rsa_verifier
+
+`rsa_verifier(data, signature, rsa_public_key)`
+
+Vérifie la signature RSA-PSS. Retourne `True` ou `False` (ne lève pas d'exception pour une signature invalide, de mauvaise taille ou issue d'une autre clé).
+
 ## Doc: messenger
 
 #### send_message
 
-`send_message(plaintext, rsa_public_key)`
+`send_message(plaintext, rsa_public_key, sender_private_key)`
 
-Chiffre `plaintext` pour le destinataire détenteur de la clé privée associée à `rsa_public_key`.
+Chiffre `plaintext` pour le destinataire détenteur de la clé privée associée à `rsa_public_key`, et signe le paquet avec `sender_private_key`.
 
 Description :
 
@@ -226,19 +275,23 @@ Description :
 - Ajoute `timestamp` (secondes Unix, 8 octets big-endian) et `nonce` (16 octets, `os.urandom`).
 - Calcule `hmac = HMAC-SHA256(hmac_key, timestamp || nonce || iv || ciphertext)`.
 - Chiffre `aes_key || hmac_key` (64 octets) avec RSA-OAEP.
+- Signe `cles_chiffrees || timestamp || nonce || iv || hmac || ciphertext` avec RSA-PSS.
 
 Sortie : dictionnaire de chaînes en hex.
+
+> La signature couvre `cles_chiffrees` : Eve ne peut pas remplacer le bloc de clés, et un destinataire ne peut pas réexpédier un message d'Alice à un tiers en re-chiffrant les clés pour lui.
 
 
 #### receive_message
 
-`receive_message(packet, rsa_private_key, replay_cache=None, now=None)`
+`receive_message(packet, rsa_private_key, sender_public_key, replay_cache=None, now=None)`
 
-Vérifie et déchiffre un paquet produit par `send_message`.
+Vérifie, authentifie et déchiffre un paquet produit par `send_message`.
 
 Description :
 
-- Décodage des 6 champs hex, tailles de `timestamp` (8) et `nonce` (16) -> Err01
+- Décodage des 7 champs hex, tailles des champs de taille fixe (`timestamp` 8, `nonce` 16, `iv` 16, `hmac` 32, `cles_chiffrees` = taille de la clé RSA) -> Err01
+- Vérifie la signature de l'expéditeur avec `sender_public_key`, **avant** tout déchiffrement -> Err06
 - Déchiffre `cles_chiffrees` avec la clé privée RSA.
 - Sépare AES (32 premiers octets) et HMAC (32 suivants).
 - Vérifie le MAC en temps constant, *avant* tout déchiffrement AES.
@@ -246,10 +299,21 @@ Description :
 - Déchiffre en AES-CBC, retire le padding, décode en UTF-8 (voir [aes_cbc_decrypt](#aes_cbc_decrypt)).
 
 Sortie : le message en clair.
--> la fonction lève une ValueError avec un code en cas de corruption du paquet
 
-> Le nonce n'est enregistré qu'**après** le MAC. Avant, Eve pourrait consommer la place d'un vrai paquet en envoyant un faux paquet portant le même nonce (DoS). voir la section [roadmap et limites](#roadmap-et-limites) pour les limites de cette protection
+-> la fonction lève une ValueError avec un code en cas de corruption ou de falsification du paquet
+
+> La signature est vérifiée en premier : un paquet qui n'est pas d'Alice est rejeté à faible coût, sans déchiffrement RSA (opération coûteuse) et sans toucher au cache de rejeu.
+> Le nonce n'est enregistré qu'**après** la signature et le MAC (pour eviter les DoS)
+> Le HMAC reste vérifié mais n'apporte plus d'intégrité supplémentaire face à Eve
+> Voir la section [roadmap et limites](#roadmap-et-limites) pour les limites restantes de cette protection (cache en mémoire, clés publiques non authentifiées)
 > `replay_cache` : par défaut un cache partagé par le processus. `now` n'existe que pour les tests (simuler un paquet périmé sans attendre).
+
+
+#### sign_packet
+
+`sign_packet(packet, sender_private_key)`
+
+Retourne une copie du paquet avec le champ `signature` (re)calculé sur les 6 autres champs. Utilisé par `send_message`, et par les tests pour re-signer un paquet volontairement altéré
 
 
 #### ReplayCache
@@ -266,7 +330,7 @@ Mémorise les nonces acceptés (`nonce -> timestamp`).
 
 ## Tests
 
-test.py est autoporteur : lancer `python test.py` teste et renvoie les résultats pour chaque groupe (`crypto_utils`, `rsa_utils`, `messenger`, `anti_rejeu`) des autres modules (PASS ou FAIL, ERROR si erreur inattendue)
+test.py est autoporteur : lancer `python test.py` teste et renvoie les résultats pour chaque groupe (`crypto_utils`, `rsa_utils`, `messenger`, `authentification`, `anti_rejeu`) des autres modules (PASS ou FAIL, ERROR si erreur inattendue)
 Il accepte aussi `python test.py <group_name>` et `--list` (liste les groupes).
 
 ### Resultats des tests
@@ -276,6 +340,7 @@ Sortie attendue de `python test.py` :
 [PASS] crypto_utils
 [PASS] rsa_utils
 [PASS] messenger
+[PASS] authentification
 [PASS] anti_rejeu
 ```
 
@@ -312,25 +377,37 @@ Le code de retour est `0` si tout passe, `1` s'il y a au moins un `FAIL` ou `ERR
 - Tailles limites : 1 octet et 318 octets (maximum)
 - Chiffrement : clés vides ou de 319 octets (Err01)
 - Déchiffrement : chiffré trop court, trop long ou vide (Err02) ; chiffré altéré ou mauvaise clé privée (Err03)
+- Signature RSA-PSS : aller-retour (384 octets), signatures différentes pour un même message mais toutes valides, message vide
+- `rsa_verifier` rejette : données altérées, signature altérée, trop courte, trop longue ou vide, mauvaise clé publique
 
 #### `messenger`
 
 - Aller-retour : message vide, 16 caractères, Unicode, 10k caractères
-- Paquet de 6 champs, tailles en hex (`cles_chiffrees` 768, `iv` 32, `hmac` 64, `timestamp` 16, `nonce` 32)
+- Paquet de 7 champs, tailles en hex (`cles_chiffrees` 768, `iv` 32, `hmac` 64, `timestamp` 16, `nonce` 32, `signature` 768)
 - Deux envois du même message donnent des paquets différents
-- Altération de `iv`, `ciphertext`, `hmac`, `timestamp` ou `nonce` : rejet (Err03)
-- `cles_chiffrees` altéré ou mauvaise clé privée : erreur RSA (rsa_utils Err03)
-- Paquet mal formé (champ manquant, hex invalide, longueur impaire, `None`, `timestamp` ou `nonce` de mauvaise taille) : Err01
-- Clés déchiffrées de taille ≠ 64 octets : Err02
+- Altération de n'importe quel champ : rejet par la signature (Err06)
+- Altération re-signée de `iv`, `ciphertext`, `hmac`, `timestamp` ou `nonce` : rejet par le MAC (Err03), la couche MAC reste une seconde barrière
+- `cles_chiffrees` altéré (re-signé) ou mauvaise clé privée : erreur RSA (rsa_utils Err03)
+- Paquet mal formé (champ manquant, hex invalide, longueur impaire, `None`, champ de taille fixe de mauvaise taille) : Err01
+- Clés déchiffrées de taille ≠ 64 octets (paquet signé) : Err02
+
+#### `authentification`
+
+- Paquet forgé de toutes pièces par Eve (signé avec sa clé) : rejeté (Err06)
+- Mauvaise clé publique d'expéditeur côté Bob : rejeté (Err06) ; la bonne clé accepte le paquet
+- Signature recopiée d'un autre paquet, ou signature nulle : rejeté (Err06)
+- Réexpédition à un tiers (clés re-chiffrées pour Charlie) : rejetée (Err06), la signature couvre `cles_chiffrees`
+- `sign_packet` sur un paquet intact : le paquet reste valide
 
 #### `anti_rejeu`
 
 - Paquet valide accepté une première fois, puis rejoué à l'identique : rejeté (Err05)
 - Même texte renvoyé légitimement (nouveau nonce) : accepté
-- `nonce` modifié pour contourner le cache : rejeté (Err03), le MAC couvre le nonce
-- `timestamp` modifié pour rafraîchir un vieux paquet : rejeté (Err03), le MAC couvre la date
+- `nonce` modifié pour contourner le cache : rejeté (Err06), la signature (et le MAC) couvre le nonce
+- `timestamp` modifié pour rafraîchir un vieux paquet : rejeté (Err06), la signature (et le MAC) couvre la date
 - Paquet périmé (> 60 s) ou daté du futur : rejeté (Err04) et non mémorisé
-- Faux paquet (MAC invalide) portant le nonce d'un vrai : rejeté (Err03), le vrai reste acceptable car le nonce n'est mémorisé qu'après le MAC
+- Faux paquet (signature ou MAC invalide) portant le nonce d'un vrai : rejeté (Err06 / Err03), le vrai reste acceptable car le nonce n'est mémorisé qu'après la signature et le MAC
+- Attaque « nonce brûlé » (nonce et date copiés, clés d'Eve, MAC valide, signature d'Alice recopiée) : rejetée (Err06), le cache reste vide et le vrai paquet est accepté ensuite
 - `ReplayCache.purge()` après la fenêtre : nonces oubliés, mémoire bornée
 - Appel sans cache explicite : le cache par défaut rejette aussi le rejeu
 
@@ -349,11 +426,12 @@ Le code de retour est `0` si tout passe, `1` s'il y a au moins un `FAIL` ou `ERR
 | rsa\_utils    | Err01 | Clés à chiffrer : taille hors de 1 à 318 octets                            |
 | rsa\_utils    | Err02 | Chiffré RSA de taille ≠ k octets                                           |
 | rsa\_utils    | Err03 | Déchiffrement RSA échoué                                                   |
-| messenger     | Err01 | Paquet mal formé (champ manquant, hex invalide, taille timestamp ≠ 8 ou nonce ≠ 16) |
+| messenger     | Err01 | Paquet mal formé (champ manquant, hex invalide, taille d'un champ de taille fixe incorrecte) |
 | messenger     | Err02 | Clés déchiffrées ≠ 64 octets                                               |
 | messenger     | Err03 | MAC invalide (données, timestamp ou nonce altérés)                         |
 | messenger     | Err04 | Horodatage hors fenêtre (périmé ou dans le futur, écart > 60 s)            |
 | messenger     | Err05 | Rejeu détecté (nonce déjà vu)                                              |
+| messenger     | Err06 | Signature de l'expéditeur invalide (paquet forgé ou altéré, mauvaise clé publique d'expéditeur) |
 
 
 
@@ -362,17 +440,26 @@ Le code de retour est `0` si tout passe, `1` s'il y a au moins un `FAIL` ou `ERR
 
 Voici une liste des limites et évolutions potentielles identifiées :
 
-- Authentification de l'expéditeur
-  Actuellement Eve peut juste chiffrer un message et se faire passer pour Alice auprès de Bob. Consommant le cache nounce et faisant que Bob va non seulement accepter le message d'Eve mais aussi refuser le message d'Alice (DoS).
-  -> Il est annoncé plus tôt que ce genre de DoS est rejetté mais il est possible par ce biais. (voir [la note de recieve_message](#receive_message))
+- **\[DONE\]** Authentification de l'expéditeur : (signature RSA-PSS, voir [la note de receive_message](#receive_message))
+
+  Le vol d'identité et le DoS impliqué par l'absence de signature sont maintenant réglés.
+  -> Reste à régler : l'authenticité des clés publiques elles-mêmes (voir ci-dessous)
+
+- Mise en place de certificats pour la distribution des clés publiques
+
+  La signature prouve que le paquet vient du détenteur de la clé privée associée à `sender_public_key`, pas que cette clé est bien celle d'Alice. Un attaquant qui remplace les clés publiques au moment de leur publication (MITM) n'est pas détecté
 
 - Passage sur le réseau
+
   Pour le moment certaines mechaniques sont fragiles : le cache anti-rejet est en mémoire donc supprimé au redémarrage (pas un problème actuellement comme tout tourne en local mais devra être persisté si plusieurs clients doivent tourner en même temps)
+  Le cache n'est pas non plus thread-safe, suppose des horloges synchronisées à ±60 s, et il n'y a ni stockage ni sérialisation des clés (c'est une bibliothèque, pas une application)
 
 - Confidentialité des messages bancale
-  Si la clé primaire de Bob fuite tous les messages précédemment envoyés sont compromis.
+
+  Si la clé primaire de Bob fuite tous les messages précédemment envoyés sont compromis (pas de forward-secrecy)
 
 - Longueur des messages masquée
+
   Si on voulait être rigoureux on imposerait une taille maximale aux messages et mettrait un padding fixe pour éviter toute information d'être découverte. Heureusement c'est un projet local en python et pas des communication militaires donc cette amélioration est mineure (mais mérite une mention).
   -> À envisager en fonction du niveau de sécurité souhaité (on ne voudrait pas ralentir tout le réseau pour des messages courts)
 
