@@ -299,6 +299,7 @@ Description :
 - Déchiffre en AES-CBC, retire le padding, décode en UTF-8 (voir [aes_cbc_decrypt](#aes_cbc_decrypt)).
 
 Sortie : le message en clair.
+
 -> la fonction lève une ValueError avec un code en cas de corruption ou de falsification du paquet
 
 > La signature est vérifiée en premier : un paquet qui n'est pas d'Alice est rejeté à faible coût, sans déchiffrement RSA (opération coûteuse) et sans toucher au cache de rejeu.
@@ -440,20 +441,25 @@ Le code de retour est `0` si tout passe, `1` s'il y a au moins un `FAIL` ou `ERR
 Voici une liste des limites et évolutions potentielles identifiées :
 
 - **\[DONE\]** Authentification de l'expéditeur : (signature RSA-PSS, voir [la note de receive_message](#receive_message))
+
   Le vol d'identité et le DoS impliqué par l'absence de signature sont maintenant réglés.
   -> Reste à régler : l'authenticité des clés publiques elles-mêmes (voir ci-dessous)
 
 - Mise en place de certificats pour la distribution des clés publiques
+
   La signature prouve que le paquet vient du détenteur de la clé privée associée à `sender_public_key`, pas que cette clé est bien celle d'Alice. Un attaquant qui remplace les clés publiques au moment de leur publication (MITM) n'est pas détecté
 
 - Passage sur le réseau
+
   Pour le moment certaines mechaniques sont fragiles : le cache anti-rejet est en mémoire donc supprimé au redémarrage (pas un problème actuellement comme tout tourne en local mais devra être persisté si plusieurs clients doivent tourner en même temps)
   Le cache n'est pas non plus thread-safe, suppose des horloges synchronisées à ±60 s, et il n'y a ni stockage ni sérialisation des clés (c'est une bibliothèque, pas une application)
 
 - Confidentialité des messages bancale
+
   Si la clé primaire de Bob fuite tous les messages précédemment envoyés sont compromis (pas de forward-secrecy)
 
 - Longueur des messages masquée
+
   Si on voulait être rigoureux on imposerait une taille maximale aux messages et mettrait un padding fixe pour éviter toute information d'être découverte. Heureusement c'est un projet local en python et pas des communication militaires donc cette amélioration est mineure (mais mérite une mention).
   -> À envisager en fonction du niveau de sécurité souhaité (on ne voudrait pas ralentir tout le réseau pour des messages courts)
 
