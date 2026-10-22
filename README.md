@@ -116,6 +116,8 @@ messagerie/
 
 Exemple d'output attendu : 
 
+<details>
+
 ```
 $python main.py
 
@@ -176,6 +178,8 @@ Paquet forgé (signé par Eve) rejeté par Bob avec l'erreur "messenger : Err06"
 Paquet piégé (clés d'Eve, MAC valide, signature d'Alice recopiée) rejeté par Bob avec l'erreur "messenger : Err06"
 Le vrai paquet d'Alice est ensuite accepté : le nonce n'a pas été consommé.
 ```
+
+</details>
 
 Les limites connues et les évolutions possibles sont listées dans la section [Roadmap et limites](#roadmap-et-limites).
 
@@ -330,12 +334,17 @@ Mémorise les nonces acceptés (`nonce -> timestamp`).
 
 ## Tests
 
-test.py est autoporteur : lancer `python test.py` teste et renvoie les résultats pour chaque groupe (`crypto_utils`, `rsa_utils`, `messenger`, `authentification`, `anti_rejeu`) des autres modules (PASS ou FAIL, ERROR si erreur inattendue)
-Il accepte aussi `python test.py <group_name>` et `--list` (liste les groupes).
+`test.py` est autoporteur : `python test.py` exécute les cinq groupes (`crypto_utils`, `rsa_utils`, `messenger`, `authentification`, `anti_rejeu`) et affiche un résultat par groupe.
+
+- `python test.py <groupe>` : lance un seul groupe
+- `python test.py --list` : liste les groupes
+
+> Les tests génèrent plusieurs paires RSA 3072 bits : l'exécution ne doit pas prendre plus de quelques secondes
 
 ### Resultats des tests
 
 Sortie attendue de `python test.py` :
+
 ```
 [PASS] crypto_utils
 [PASS] rsa_utils
@@ -344,76 +353,114 @@ Sortie attendue de `python test.py` :
 [PASS] anti_rejeu
 ```
 
-| Résultat | Signification                                                    |
-| -------- | ---------------------------------------------------------------- |
-| `PASS`   | Toutes les assertions du groupe sont vérifiées                   |
-| `FAIL`   | Une assertion a échoué (la trace est affichée)                   |
-| `ERROR`  | Exception inattendue (autre qu'une assertion)                    |
-| `SKIP`   | Groupe pas encore implémenté (`NotImplementedError`)             |
+| Résultat | Signification                                      |
+| -------- | -------------------------------------------------- |
+| `PASS`   | Toutes les assertions du groupe sont vérifiées     |
+| `FAIL`   | Une assertion a échoué (la trace est affichée)     |
+| `ERROR`  | Exception inattendue (autre qu'une assertion)      |
 
-Le code de retour est `0` si tout passe, `1` s'il y a au moins un `FAIL` ou `ERROR`. Un nom de groupe inconnu arrête le script avec un message d'erreur (Test inconnu).
-
-> Les tests génèrent plusieurs paires RSA 3072 bits, l'exécution n'est donc pas instantanée mais ne doit pas prendre plus de quelques secondes.
+Code de retour : `0` si tout passe, `1` s'il y a au moins un `FAIL` ou `ERROR`. Un nom de groupe inconnu arrête le script ("Test inconnu").
 
 ### Groupes de tests
 
-#### `crypto_utils`
+Les codes `ErrXX` sont ceux du module testé (voir [Codes d'erreur](#codes-derreur)).
+
+<details>
+<summary><code>crypto_utils</code> : AES-256-CBC et HMAC-SHA256</summary>
 
 **AES-256-CBC**
-- Tailles : IV de 16 octets, padding PKCS7 (7 octets -> 16, 16 -> 32, 17 -> 32, message vide -> 16)
-- IV et chiffré différents à chaque appel pour un même message
-- Aller-retour : message vide, 16 et 17 caractères, Unicode, 10k caractères
-- Erreurs : mauvaise taille de clé (Err01), d'IV (Err02), chiffré vide ou non multiple de 16 (Err03), padding invalide ou UTF-8 invalide (Err04)
+
+| Vérifié | Attendu |
+| ------- | ------- |
+| IV et chiffré | IV de 16 octets, différents à chaque appel pour un même message |
+| Padding PKCS7 | 7 octets → 16, 16 → 32, 17 → 32, message vide → 16 |
+| Aller-retour | Message vide, 16 et 17 caractères, Unicode, 10k caractères |
+| Clé ≠ 32 octets | `Err01` |
+| IV ≠ 16 octets | `Err02` |
+| Chiffré vide ou non multiple de 16 | `Err03` |
+| Padding invalide ou UTF-8 invalide | `Err04` |
 
 **HMAC-SHA256**
-- Sortie de 32 octets, déterministe, identique à l'implémentation de la stdlib (`hmac` + `hashlib`)
-- `verify_hmac` rejette : données altérées, MAC altéré, mauvaise clé, MAC trop court, trop long ou vide
-- Mauvaise taille de clé (Err05)
 
-#### `rsa_utils`
+| Vérifié | Attendu |
+| ------- | ------- |
+| Sortie | 32 octets, déterministe, identique à `hmac` + `hashlib` (stdlib) |
+| `verify_hmac` avec données altérées, MAC altéré, mauvaise clé, MAC trop court, trop long ou vide | `False` |
+| Clé HMAC ≠ 32 octets | `Err05` |
 
-- Aller-retour, chiffré de 384 octets (RSA 3072 bits)
-- OAEP probabiliste : deux chiffrés différents pour un même clair
-- Tailles limites : 1 octet et 318 octets (maximum)
-- Chiffrement : clés vides ou de 319 octets (Err01)
-- Déchiffrement : chiffré trop court, trop long ou vide (Err02) ; chiffré altéré ou mauvaise clé privée (Err03)
-- Signature RSA-PSS : aller-retour (384 octets), signatures différentes pour un même message mais toutes valides, message vide
-- `rsa_verifier` rejette : données altérées, signature altérée, trop courte, trop longue ou vide, mauvaise clé publique
+</details>
 
-#### `messenger`
+<details>
+<summary><code>rsa_utils</code> : RSA-OAEP et RSA-PSS</summary>
 
-- Aller-retour : message vide, 16 caractères, Unicode, 10k caractères
-- Paquet de 7 champs, tailles en hex (`cles_chiffrees` 768, `iv` 32, `hmac` 64, `timestamp` 16, `nonce` 32, `signature` 768)
-- Deux envois du même message donnent des paquets différents
-- Altération de n'importe quel champ : rejet par la signature (Err06)
-- Altération re-signée de `iv`, `ciphertext`, `hmac`, `timestamp` ou `nonce` : rejet par le MAC (Err03), la couche MAC reste une seconde barrière
-- `cles_chiffrees` altéré (re-signé) ou mauvaise clé privée : erreur RSA (rsa_utils Err03)
-- Paquet mal formé (champ manquant, hex invalide, longueur impaire, `None`, champ de taille fixe de mauvaise taille) : Err01
-- Clés déchiffrées de taille ≠ 64 octets (paquet signé) : Err02
+**Chiffrement RSA-OAEP**
 
-#### `authentification`
+| Vérifié | Attendu |
+| ------- | ------- |
+| Aller-retour | Chiffré de 384 octets (RSA 3072 bits) |
+| Deux chiffrements du même clair | Chiffrés différents (OAEP probabiliste) |
+| Tailles limites | 1 et 318 octets acceptés |
+| Clés vides ou de 319 octets | `Err01` |
+| Chiffré trop court, trop long ou vide | `Err02` |
+| Chiffré altéré ou mauvaise clé privée | `Err03` |
 
-- Paquet forgé de toutes pièces par Eve (signé avec sa clé) : rejeté (Err06)
-- Mauvaise clé publique d'expéditeur côté Bob : rejeté (Err06) ; la bonne clé accepte le paquet
-- Signature recopiée d'un autre paquet, ou signature nulle : rejeté (Err06)
-- Réexpédition à un tiers (clés re-chiffrées pour Charlie) : rejetée (Err06), la signature couvre `cles_chiffrees`
-- `sign_packet` sur un paquet intact : le paquet reste valide
+**Signature RSA-PSS**
 
-#### `anti_rejeu`
+| Vérifié | Attendu |
+| ------- | ------- |
+| Aller-retour | Signature de 384 octets, message vide accepté |
+| Deux signatures du même message | Différentes, mais toutes deux valides |
+| `rsa_verifier` avec données altérées, signature altérée, trop courte, trop longue ou vide, mauvaise clé publique | `False` |
 
-- Paquet valide accepté une première fois, puis rejoué à l'identique : rejeté (Err05)
-- Même texte renvoyé légitimement (nouveau nonce) : accepté
-- `nonce` modifié pour contourner le cache : rejeté (Err06), la signature (et le MAC) couvre le nonce
-- `timestamp` modifié pour rafraîchir un vieux paquet : rejeté (Err06), la signature (et le MAC) couvre la date
-- Paquet périmé (> 60 s) ou daté du futur : rejeté (Err04) et non mémorisé
-- Faux paquet (signature ou MAC invalide) portant le nonce d'un vrai : rejeté (Err06 / Err03), le vrai reste acceptable car le nonce n'est mémorisé qu'après la signature et le MAC
-- Attaque « nonce brûlé » (nonce et date copiés, clés d'Eve, MAC valide, signature d'Alice recopiée) : rejetée (Err06), le cache reste vide et le vrai paquet est accepté ensuite
-- `ReplayCache.purge()` après la fenêtre : nonces oubliés, mémoire bornée
-- Appel sans cache explicite : le cache par défaut rejette aussi le rejeu
+</details>
+
+<details>
+<summary><code>messenger</code> : format du paquet et erreurs</summary>
+
+| Vérifié | Attendu |
+| ------- | ------- |
+| Aller-retour | Message vide, 16 caractères, Unicode, 10k caractères |
+| Format du paquet | 7 champs. Tailles en hex : `cles_chiffrees` 768, `iv` 32, `hmac` 64, `timestamp` 16, `nonce` 32, `signature` 768 |
+| Deux envois du même message | Paquets différents |
+| Altération de n'importe quel champ | `Err06` (signature) |
+| Altération re-signée de `iv`, `ciphertext`, `hmac`, `timestamp` ou `nonce` | `Err03` (le MAC reste une seconde barrière) |
+| `cles_chiffrees` altéré (re-signé) ou mauvaise clé privée | `rsa_utils` `Err03` |
+| Paquet mal formé : champ manquant, hex invalide, longueur impaire, `None`, mauvaise taille d'un champ fixe | `Err01` |
+| Clés déchiffrées ≠ 64 octets (paquet signé) | `Err02` |
+
+</details>
+
+<details>
+<summary><code>authentification</code> : usurpation et signature</summary>
+
+| Scénario | Attendu |
+| -------- | ------- |
+| Paquet forgé par Eve (signé avec sa clé) | `Err06` |
+| Mauvaise clé publique d'expéditeur côté Bob | `Err06` (la bonne clé accepte le paquet) |
+| Signature recopiée d'un autre paquet, ou signature nulle | `Err06` |
+| Réexpédition à un tiers (clés re-chiffrées pour Charlie) | `Err06` : la signature couvre `cles_chiffrees` |
+| `sign_packet` sur un paquet intact | Le paquet reste valide |
+
+</details>
+
+<details>
+<summary><code>anti_rejeu</code> : nonce, horodatage et cache</summary>
+
+| Scénario | Attendu |
+| -------- | ------- |
+| Paquet valide, accepté puis rejoué à l'identique | 1er envoi accepté, rejeu `Err05` |
+| Même texte renvoyé légitimement (nouveau nonce) | Accepté |
+| `nonce` modifié pour contourner le cache | `Err06` : la signature (et le MAC) couvre le nonce |
+| `timestamp` modifié pour rafraîchir un vieux paquet | `Err06` : la signature (et le MAC) couvre la date |
+| Paquet périmé (> 60 s) ou daté du futur | `Err04`, nonce non mémorisé |
+| Faux paquet portant le nonce d'un vrai | `Err06` ou `Err03`, le vrai paquet reste acceptable (nonce mémorisé seulement après signature et MAC) |
+| Attaque « nonce brûlé » (nonce et date copiés, clés d'Eve, MAC valide, signature d'Alice recopiée) | `Err06`, cache vide, le vrai paquet est accepté ensuite |
+| `ReplayCache.purge()` après la fenêtre | Nonces oubliés, mémoire bornée |
+| Appel sans cache explicite | Le cache par défaut rejette aussi le rejeu |
 
 > Le paramètre `now` de `receive_message` permet de simuler un paquet périmé ou futur sans attendre 60 secondes.
 
-
+</details>
 ## Codes d'erreur
 
 | Module        | Code  | Signification                                                              |
