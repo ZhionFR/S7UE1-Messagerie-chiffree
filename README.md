@@ -163,8 +163,8 @@ Chiffre un str en AES-256-CBC (IV aléatoire de 16 octets, padding PKCS7). Retou
 
 Déchiffre, retire le padding et décode en UTF-8. Une seule erreur (Err04) pour padding ou UTF-8 invalide.
 
-> Même erreur volontairement pour éviter l'attaque de Vaudenay.
-> Aussi 255/256 cas seront une erreur de padding.
+> Même erreur volontairement sinon, l'erreur UTF-8 n'apparaîtrait que si le padding est valide (environ 1/256 cas), ce qui constituerait un oracle de padding (attaque de Vaudenay)
+> C'est une défense en profondeur. La protection effective est le MAC vérifié *avant* tout déchiffrement (Encrypt-then-MAC, voir [receive_message](#receive_message))
 
 
 #### compute_hmac
