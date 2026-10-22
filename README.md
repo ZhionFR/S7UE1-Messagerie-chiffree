@@ -28,11 +28,6 @@ Ce repo contient le projet de cryptographie d'octobre 2026.
   - [Tests](#tests)
     - [Résultats des tests](#resultats-des-tests)
     - [Groupes de tests](#groupes-de-tests)
-      - [crypto_utils](#crypto_utils)
-      - [rsa_utils](#rsa_utils)
-      - [messenger](#messenger)
-      - [authentification](#authentification)
-      - [anti_rejeu](#anti_rejeu)
   - [Codes d'erreur](#codes-derreur)
 - [Roadmap et limites](#roadmap-et-limites)
 
@@ -114,9 +109,9 @@ messagerie/
 
 - Déroule toute la séquence décrite dans [Processus](#processus)
 
-Exemple d'output attendu : 
-
 <details>
+
+<summary>Exemple d'output attendu</summary>
 
 ```
 $python main.py
@@ -307,8 +302,7 @@ Sortie : le message en clair.
 -> la fonction lève une ValueError avec un code en cas de corruption ou de falsification du paquet
 
 > La signature est vérifiée en premier : un paquet qui n'est pas d'Alice est rejeté à faible coût, sans déchiffrement RSA (opération coûteuse) et sans toucher au cache de rejeu.
-> Le nonce n'est enregistré qu'**après** la signature et le MAC (pour eviter les DoS)
-> Le HMAC reste vérifié mais n'apporte plus d'intégrité supplémentaire face à Eve
+> Le nonce n'est enregistré qu'**après** la signature et le MAC (pour eviter les DoS) 
 > Voir la section [roadmap et limites](#roadmap-et-limites) pour les limites restantes de cette protection (cache en mémoire, clés publiques non authentifiées)
 > `replay_cache` : par défaut un cache partagé par le processus. `now` n'existe que pour les tests (simuler un paquet périmé sans attendre).
 
@@ -499,15 +493,15 @@ Voici une liste des limites et évolutions potentielles identifiées :
 
 - Passage sur le réseau
 
-  Pour le moment certaines mechaniques sont fragiles : le cache anti-rejet est en mémoire donc supprimé au redémarrage (pas un problème actuellement comme tout tourne en local mais devra être persisté si plusieurs clients doivent tourner en même temps)
+  Pour le moment certaines mechaniques sont fragiles : le cache anti-rejeu est en mémoire donc supprimé au redémarrage (pas un problème actuellement comme tout tourne en local mais devra être persisté si plusieurs clients doivent tourner en même temps)
   Le cache n'est pas non plus thread-safe, suppose des horloges synchronisées à ±60 s, et il n'y a ni stockage ni sérialisation des clés (c'est une bibliothèque, pas une application)
 
 - Confidentialité des messages bancale
 
-  Si la clé primaire de Bob fuite tous les messages précédemment envoyés sont compromis (pas de forward-secrecy)
+  Si la clé privée de Bob fuite tous les messages précédemment envoyés sont compromis (pas de forward-secrecy)
 
-- Longueur des messages masquée
+- Longueur des messages pas masquée
 
-  Si on voulait être rigoureux on imposerait une taille maximale aux messages et mettrait un padding fixe pour éviter toute information d'être découverte. Heureusement c'est un projet local en python et pas des communication militaires donc cette amélioration est mineure (mais mérite une mention).
+  Si on voulait être rigoureux on imposerait une taille maximale aux messages et mettrait un padding fixe pour éviter toute information d'être découverte. Impact limité car c'est un projet local en python et pas des communication militaires donc cette amélioration est mineure (mais mérite une mention)
   -> À envisager en fonction du niveau de sécurité souhaité (on ne voudrait pas ralentir tout le réseau pour des messages courts)
 
