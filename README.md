@@ -461,6 +461,7 @@ Les codes `ErrXX` sont ceux du module testé (voir [Codes d'erreur](#codes-derre
 > Le paramètre `now` de `receive_message` permet de simuler un paquet périmé ou futur sans attendre 60 secondes.
 
 </details>
+
 ## Codes d'erreur
 
 | Module        | Code  | Signification                                                              |
