@@ -30,6 +30,7 @@ Ce repo contient le projet de cryptographie d'octobre 2026.
       - [messenger](#messenger)
       - [anti_rejeu](#anti_rejeu)
   - [Codes d'erreur](#codes-derreur)
+- [Roadmap et limites](#roadmap-et-limites)
 
 
 # Description
@@ -247,7 +248,7 @@ Description :
 Sortie : le message en clair.
 -> la fonction lève une ValueError avec un code en cas de corruption du paquet
 
-> Le nonce n'est enregistré qu'**après** le MAC. Avant, Eve pourrait consommer la place d'un vrai paquet en envoyant un faux paquet portant le même nonce (DoS).
+> Le nonce n'est enregistré qu'**après** le MAC. Avant, Eve pourrait consommer la place d'un vrai paquet en envoyant un faux paquet portant le même nonce (DoS). voir la section [roadmap et limites](#roadmap-et-limites) pour les limites de cette protection
 > `replay_cache` : par défaut un cache partagé par le processus. `now` n'existe que pour les tests (simuler un paquet périmé sans attendre).
 
 
@@ -353,3 +354,25 @@ Le code de retour est `0` si tout passe, `1` s'il y a au moins un `FAIL` ou `ERR
 | messenger     | Err03 | MAC invalide (données, timestamp ou nonce altérés)                         |
 | messenger     | Err04 | Horodatage hors fenêtre (périmé ou dans le futur, écart > 60 s)            |
 | messenger     | Err05 | Rejeu détecté (nonce déjà vu)                                              |
+
+
+
+# Roadmap et limites
+
+
+Voici une liste des limites et évolutions potentielles identifiées :
+
+- Authentification de l'expéditeur
+  Actuellement Eve peut juste chiffrer un message et se faire passer pour Alice auprès de Bob. Consommant le cache nounce et faisant que Bob va non seulement accepter le message d'Eve mais aussi refuser le message d'Alice (DoS).
+  -> Il est annoncé plus tôt que ce genre de DoS est rejetté mais il est possible par ce biais. (voir [la note de recieve_message](#receive_message))
+
+- Passage sur le réseau
+  Pour le moment certaines mechaniques sont fragiles : le cache anti-rejet est en mémoire donc supprimé au redémarrage (pas un problème actuellement comme tout tourne en local mais devra être persisté si plusieurs clients doivent tourner en même temps)
+
+- Confidentialité des messages bancale
+  Si la clé primaire de Bob fuite tous les messages précédemment envoyés sont compromis.
+
+- Longueur des messages masquée
+  Si on voulait être rigoureux on imposerait une taille maximale aux messages et mettrait un padding fixe pour éviter toute information d'être découverte. Heureusement c'est un projet local en python et pas des communication militaires donc cette amélioration est mineure (mais mérite une mention).
+  -> À envisager en fonction du niveau de sécurité souhaité (on ne voudrait pas ralentir tout le réseau pour des messages courts)
+
